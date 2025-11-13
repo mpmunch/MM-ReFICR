@@ -165,7 +165,7 @@ def LLM2Vec_retrieval(queries,documents,rec_lists):
 
 
 def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, gen_instr:str=None,from_json:str=None, db_json:str=None, embeddings_path:str=None, base_model_path:str="GritLM/GritLM-7B",
-    target_model_path:str=None, to_json:str=None, stored_cand_lst:bool=True, is_lora:bool=True):
+    target_model_path:str=None, to_json:str=None, stored_cand_lst:bool=True, is_lora:bool=True, batch_size:int=8):
 
     
     set_seed(123)
@@ -192,14 +192,6 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
 
         if tag == "Conv2Item":
 
-            #processed item name
-            #name2des = {extract_movie_name(k):v for k,v in db.items()}
-            #all_names = list(name2des.keys())
-            #name2id = {all_names[index]: index for index in range(len(all_names))}
-            #id2name = {v:k for k,v in name2id.items()}
-            #print("length id2name:",len(id2name))
-            #docs = list(name2des.values())
-
             all_names = list(db.keys())
             name2id = {all_names[index]: index for index in range(len(all_names))}
             print("name2id:",len(name2id))
@@ -214,19 +206,33 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
             print("min docs:",np.min(docs_len))
             print('doc length:',len(docs))
 
-
-            
             if os.path.exists(embeddings_path):
                 print("loading embeddings form file")
                 d_rep = torch.load(embeddings_path)
             else:
-                d_rep = model.encode(docs, instruction=gritlm_instruction(doc_instr))
-                print('document shape:',torch.from_numpy(d_rep).shape)
+                print(f"Encoding {len(docs)} docs in batches of {batch_size} ...")
+                all_chunks = []
+                for i in tqdm(range(0, len(docs), batch_size)):
+                    batch_docs = docs[i:i+batch_size]
+                    with torch.inference_mode():
+                        batch_rep = model.encode(batch_docs, instruction=gritlm_instruction(doc_instr))
+
+                    # convert to CPU tensor
+                    if isinstance(batch_rep, torch.Tensor):
+                        batch_rep_cpu = batch_rep.detach().cpu()
+                    else:
+                        batch_rep_cpu = torch.from_numpy(batch_rep).cpu()
+
+                    all_chunks.append(batch_rep_cpu)
+
+                    torch.cuda.empty_cache()
+
+                d_rep = torch.cat(all_chunks, dim=0)
+
+                print('document shape:', d_rep.shape)
                 torch.save(d_rep, embeddings_path)
                 print("saving embeddigns to file ...") 
 
-
-            #get ground truth item ID
             rec_lists = []
             for example in tqdm(data):
                 lst = []
@@ -237,24 +243,8 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                         for name, desc in db.items():
                             if extract_movie_name(name) == extract_movie_name(item):
                                 lst.append(name2id[name])
-                #print("(name,ids):",(example['rec'],lst))
                 lst = list(set(lst))
                 rec_lists.append(lst)
-
-
-
-            #rec_lists = []
-            #for example in tqdm(data):
-            #    lst = []
-            #    for item in example['rec']:
-            #        extract_item = extract_movie_name(item)
-            #        lst.append(name2id[extract_item])
-            #    rec_lists.append(lst)
-
-            #Perform BM25 retrieval
-            #rank = BM25_retrieval(docs, queries)
-
-            #rank = LLM2Vec_retrieval(queries,docs,rec_lists)
 
             num_slice = 4
             step = int(len(queries) / num_slice) + 1
@@ -267,12 +257,32 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                 rec_lists_slice = rec_lists[i : i + step]
 
                 assert len(queries_slice) == len(rec_lists_slice)
-            
+                
                 q_rep = model.encode(queries_slice, instruction=gritlm_instruction(query_instr))
-                print('queries shape:', torch.from_numpy(q_rep).shape) 
 
-                cos_sim = F.cosine_similarity(torch.from_numpy(q_rep).unsqueeze(1),torch.from_numpy(d_rep).unsqueeze(0),dim=-1)
-                cos_sim = torch.where(torch.isnan(cos_sim),torch.full_like(cos_sim,0),cos_sim)
+                # convert embeddings to CPU tensors
+                if isinstance(q_rep, torch.Tensor):
+                    q_rep_t = q_rep.detach().cpu()
+                else:
+                    q_rep_t = torch.from_numpy(q_rep).cpu()
+
+                if isinstance(d_rep, torch.Tensor):
+                    d_rep_t = d_rep.detach().cpu()
+                else:
+                    d_rep_t = torch.from_numpy(d_rep).cpu()
+
+                print('queries shape:', q_rep_t.shape) 
+
+                cos_sim = F.cosine_similarity(
+                    q_rep_t.unsqueeze(1),
+                    d_rep_t.unsqueeze(0),
+                    dim=-1
+                )
+                cos_sim = torch.where(
+                    torch.isnan(cos_sim),
+                    torch.full_like(cos_sim,0),
+                    cos_sim
+                )
                 print("cos_sim shape:",cos_sim.shape)
                 print("cos_sim:",cos_sim)
 
