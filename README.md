@@ -79,8 +79,15 @@ CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node 1 --master_port 25900\
 ### Response Generation
 `CUDA_VISIBLE_DEVICES=0 python inference_ReRICR.py --config config/Response_Gen/inspired_config.yaml`
 
+### For AAU-AILAB
+
+`srun --mem=24G --cpus-per-task=15 --gres=gpu:1 --time=01:00:00 singularity exec --nv   --env HF_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/huggingface --env TORCH_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/torch   --env PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"   --env TMPDIR=/ceph/project/P9-ReFICR/ReFICR/tmp   p9-reficr_latest.sif   python inference_ReRICR.py {ADD CORRECT CONFIG FLAG}`
+
+
 ## Note
 you need to simply replace the modeling_mistral.py file in your transformers installation with modeling_mistral.py in order to use the bidirectional attention. More details can be found in [ContextualAI/gritlm](https://github.com/ContextualAI/gritlm).
 
 ## Acknowledgement
-[ContextualAI/gritlm](https://github.com/ContextualAI/gritlm) This repository is built upon gritlm!
+[yt556677/ReFICR](https://github.com/yt556677/ReFICR) This repo is a student project based on the ReFICR paper.
+
+[ContextualAI/gritlm](https://github.com/ContextualAI/gritlm) The original repo and our is built upon gritlm!
