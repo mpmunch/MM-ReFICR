@@ -325,12 +325,12 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                 print("loading embeddings form file")
                 conv_d_rep = torch.load(embeddings_path)
             else:
-                conv_d_rep = model.encode(conv_docs, instruction=gritlm_instruction(doc_instr))
+                conv_d_rep = model.encode(conv_docs, instruction=gritlm_instruction(doc_instr), batch_size=batch_size)
                 print('conv doc shape:',torch.from_numpy(conv_d_rep).shape)
                 torch.save(conv_d_rep, embeddings_path)
                 print("saving embeddigns to file ...")
 
-            conv_q_rep = model.encode(queries, instruction=gritlm_instruction(query_instr))
+            conv_q_rep = model.encode(queries, instruction=gritlm_instruction(query_instr), batch_size=batch_size)
             print('conv queries shape:',torch.from_numpy(conv_q_rep).shape)
             #normalize
             conv_d_rep = F.normalize(torch.from_numpy(conv_d_rep), p=2, dim=1)
