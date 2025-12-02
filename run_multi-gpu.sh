@@ -7,9 +7,10 @@ torchrun --nproc_per_node 4 --master_port 25900\
  --model_name_or_path GritLM/GritLM-7B \
  --train_data training/toy_data_instruct/ReFICR_Instruct\
  --learning_rate 2e-5 \
- --num_train_epochs 1 \
+ --num_train_epochs 2 \
  --warmup_ratio 0.03 \
  --per_device_train_batch_size 1 \
+ --negatives_cross_device True \
  --gradient_accumulation_steps 1 \
  --dataloader_drop_last True \
  --normalized True \
