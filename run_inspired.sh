@@ -6,7 +6,7 @@
 #SBATCH --mem=24G
 #SBATCH --cpus-per-task=15
 #SBATCH --gres=gpu:1
-#SBATCH --time=5:00:00
+#SBATCH --time=8:00:00
 
 # Run script in container
 # singularity exec --nv /ceph/project/python/python_3.10.sif bash run.sh
