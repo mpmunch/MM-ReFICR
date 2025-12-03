@@ -1,8 +1,8 @@
 #!/bin/bash
 
-#SBATCH --job-name=reficr_training
-#SBATCH --output=reficr_training.out
-#SBATCH --error=reficr_training.err
+#SBATCH --job-name=inspired_eval
+#SBATCH --output=inspired_eval.out
+#SBATCH --error=inspired_eval.err
 #SBATCH --mem=24G
 #SBATCH --cpus-per-task=15
 #SBATCH --gres=gpu:1
