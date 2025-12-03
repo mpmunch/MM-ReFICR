@@ -258,7 +258,7 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
 
                 assert len(queries_slice) == len(rec_lists_slice)
                 
-                q_rep = model.encode(queries_slice, instruction=gritlm_instruction(query_instr))
+                q_rep = model.encode(queries_slice, instruction=gritlm_instruction(query_instr), batch_size=batch_size)
 
                 # convert embeddings to CPU tensors
                 if isinstance(q_rep, torch.Tensor):
