@@ -1,6 +1,10 @@
 export HF_HOME=./.cache/huggingface
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 
+# Patch transformers with custom modeling_mistral.py (bidirectional attention)
+TRANSFORMERS_PATH=$(python -c "import transformers; import os; print(os.path.dirname(transformers.__file__))")
+cp modeling_mistral.py "$TRANSFORMERS_PATH/models/mistral/modeling_mistral.py"
+
 CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node 1 --master_port 25900\
  -m training.run \
  --output_dir model_weights/ReFICR_qlora\
