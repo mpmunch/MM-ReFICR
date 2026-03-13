@@ -5,6 +5,14 @@ cd "$(dirname "$0")"
 export HF_HOME=./.cache/huggingface
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 
+mkdir -p logs
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_FILE="logs/run_${TIMESTAMP}.log"
+ERR_FILE="logs/run_${TIMESTAMP}.err"
+
+echo "Full log: $LOG_FILE"
+echo "Errors/warnings: $ERR_FILE"
+
 # Patch transformers with custom modeling_mistral.py (bidirectional attention) -- Moved into patch_mistral.sh for better modularity.
 # TRANSFORMERS_PATH=$(python -c "import transformers; import os; print(os.path.dirname(transformers.__file__))")
 # cp modeling_mistral.py "$TRANSFORMERS_PATH/models/mistral/modeling_mistral.py"
@@ -39,4 +47,5 @@ CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node 1 --master_port 25900\
  --bf16 True \
  --qlora True \
  --report_to none \
- --in_batch_neg False
+ --in_batch_neg False \
+ 2> >(tee "$ERR_FILE" >&2) | tee "$LOG_FILE"
