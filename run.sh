@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 export HF_HOME=./.cache/huggingface
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 
-# Patch transformers with custom modeling_mistral.py (bidirectional attention) -- Moved into patch_modeling_mistral.sh for better modularity.
+# Patch transformers with custom modeling_mistral.py (bidirectional attention) -- Moved into patch_mistral.sh for better modularity.
 # TRANSFORMERS_PATH=$(python -c "import transformers; import os; print(os.path.dirname(transformers.__file__))")
 # cp modeling_mistral.py "$TRANSFORMERS_PATH/models/mistral/modeling_mistral.py"
 
