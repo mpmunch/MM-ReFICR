@@ -1,5 +1,6 @@
 .stfolder/
 
+training/toy_data_instruct/
 
 # Template gitignore for Python
 
