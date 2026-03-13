@@ -1,4 +1,5 @@
-cd "$(dirname "$0")"
+# cd "$(dirname "$0")"
+cd /work/ReFICR
 
 # export PATH="$HOME/ucloud/.local/bin:$PATH"
 # export PATH="$HOME/.local/bin:$PATH"
@@ -18,6 +19,8 @@ echo "Errors/warnings: $ERR_FILE"
 # cp modeling_mistral.py "$TRANSFORMERS_PATH/models/mistral/modeling_mistral.py"
 
 source .venv/bin/activate
+echo python interpreter: $(which python)
+
 
 CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node 1 --master_port 25900\
  -m training.run \
