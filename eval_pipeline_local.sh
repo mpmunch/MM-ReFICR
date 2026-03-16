@@ -1,0 +1,209 @@
+#!/bin/bash
+# eval_pipeline_local.sh
+# Non-Singularity version of eval_pipeline.sh. Runs inference directly
+# using the local Python environment (.venv).
+#
+# Usage:
+#   bash eval_pipeline_local.sh [dataset] [from_step]
+#
+#   dataset   : inspired (default) or redial
+#   from_step : conv2item (default) | conv2conv | ranking
+
+cd /work/ReFICR
+source .venv/bin/activate
+export HF_HOME=./.cache/huggingface
+export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
+
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+DATASET="${1:-inspired}"
+FROM_STEP="${2:-conv2item}"
+
+if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
+    echo "Unknown dataset: $DATASET (expected: inspired or redial)"
+    exit 1
+fi
+
+if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP" != "ranking" ]]; then
+    echo "Unknown from_step: $FROM_STEP (expected: conv2item, conv2conv, or ranking)"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+DATA_DIR="training/CRS_data/${DATASET}"
+LOG_DIR="logs"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_FILE="${LOG_DIR}/eval_${DATASET}_${TIMESTAMP}.log"
+
+ITEM_EMB="${DATA_DIR}/${DATASET}_item_embeddings.pt"
+CONV_EMB="${DATA_DIR}/${DATASET}_conv_embeddings.pt"
+CAND_JSON="${DATA_DIR}/test_processed_cand.jsonl"
+CAND_RAG_JSON="${DATA_DIR}/test_processed_cand_rag.jsonl"
+
+# ---------------------------------------------------------------------------
+# Helper: run a step and return its exit code
+# ---------------------------------------------------------------------------
+run_step() {
+    python inference_ReRICR.py --config "$1"
+}
+
+# ---------------------------------------------------------------------------
+# Helper: print a section banner
+# ---------------------------------------------------------------------------
+banner() {
+    echo ""
+    echo "======================================================================"
+    printf "  %s\n" "$@"
+    echo "======================================================================"
+}
+
+# ---------------------------------------------------------------------------
+# Helper: elapsed time in H:M:S
+# ---------------------------------------------------------------------------
+elapsed() {
+    local secs=$(( $(date +%s) - $1 ))
+    printf "%02d:%02d:%02d" $((secs/3600)) $(( (secs%3600)/60 )) $((secs%60))
+}
+
+# ---------------------------------------------------------------------------
+# Main pipeline (everything below is tee'd to the log file)
+# ---------------------------------------------------------------------------
+mkdir -p "$LOG_DIR"
+
+{
+    PIPELINE_START=$(date +%s)
+
+    banner \
+        "ReFICR Evaluation Pipeline (local)" \
+        "Dataset    : ${DATASET}" \
+        "From step  : ${FROM_STEP}" \
+        "Python     : $(which python)" \
+        "Model      : $(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')" \
+        "Log        : ${LOG_FILE}" \
+        "Started    : $(date)"
+
+    # -----------------------------------------------------------------------
+    # Step 0: Remove stale files
+    # -----------------------------------------------------------------------
+    banner "CLEANUP — Removing stale files for steps starting from: ${FROM_STEP}"
+
+    case "$FROM_STEP" in
+        conv2item)
+            STALE=("$ITEM_EMB" "$CONV_EMB" "$CAND_JSON" "$CAND_RAG_JSON")
+            ;;
+        conv2conv)
+            STALE=("$CONV_EMB" "$CAND_RAG_JSON")
+            ;;
+        ranking)
+            STALE=()
+            echo "  Resuming from Ranking — no files removed."
+            ;;
+    esac
+
+    for f in "${STALE[@]}"; do
+        if [ -f "$f" ]; then
+            rm "$f"
+            echo "  Removed : $f"
+        else
+            echo "  Missing (skip) : $f"
+        fi
+    done
+
+    # -----------------------------------------------------------------------
+    # Step 1: Conv2Item
+    # -----------------------------------------------------------------------
+    STEP1_OK=true
+    if [[ "$FROM_STEP" == "conv2item" ]]; then
+        banner "[STEP 1/3] Conv2Item — Item Retrieval" "Started : $(date)"
+        STEP_START=$(date +%s)
+
+        if run_step "config/Conv2Item/${DATASET}_config.yaml"; then
+            echo ""
+            echo "  [STEP 1/3] Finished in $(elapsed $STEP_START) — $(date)"
+        else
+            echo ""
+            echo "  [STEP 1/3] FAILED after $(elapsed $STEP_START) — $(date)"
+            STEP1_OK=false
+        fi
+    else
+        banner "[STEP 1/3] Conv2Item — Skipped (resuming from ${FROM_STEP})"
+    fi
+
+    # -----------------------------------------------------------------------
+    # Step 2: Conv2Conv
+    # -----------------------------------------------------------------------
+    STEP2_OK=true
+    if [[ "$FROM_STEP" == "ranking" ]]; then
+        banner "[STEP 2/3] Conv2Conv — Skipped (resuming from ${FROM_STEP})"
+    elif [ "$STEP1_OK" = false ]; then
+        banner "[STEP 2/3] Conv2Conv — Skipped (Conv2Item failed)"
+        STEP2_OK=false
+    else
+        banner "[STEP 2/3] Conv2Conv — Conversation Retrieval" "Started : $(date)"
+        STEP_START=$(date +%s)
+
+        if run_step "config/Conv2Conv/${DATASET}_config.yaml"; then
+            echo ""
+            echo "  [STEP 2/3] Finished in $(elapsed $STEP_START) — $(date)"
+        else
+            echo ""
+            echo "  [STEP 2/3] FAILED after $(elapsed $STEP_START) — $(date)"
+            STEP2_OK=false
+        fi
+    fi
+
+    # -----------------------------------------------------------------------
+    # Step 3: Ranking
+    # -----------------------------------------------------------------------
+    STEP3_OK=true
+    if [ "$STEP2_OK" = false ]; then
+        banner "[STEP 3/3] Ranking — Skipped (Conv2Conv failed)"
+        STEP3_OK=false
+    else
+        banner "[STEP 3/3] Ranking — Item Re-ranking" "Started : $(date)"
+        STEP_START=$(date +%s)
+
+        if run_step "config/Ranking/${DATASET}_config.yaml"; then
+            echo ""
+            echo "  [STEP 3/3] Finished in $(elapsed $STEP_START) — $(date)"
+        else
+            echo ""
+            echo "  [STEP 3/3] FAILED after $(elapsed $STEP_START) — $(date)"
+            STEP3_OK=false
+        fi
+    fi
+
+    # -----------------------------------------------------------------------
+    # Metric summary
+    # -----------------------------------------------------------------------
+    banner "METRIC SUMMARY" "Total time : $(elapsed $PIPELINE_START)" "Completed  : $(date)"
+
+    echo ""
+    echo "  Conv2Item (retrieval recall before re-ranking):"
+    awk '
+        /\[STEP 1\/3\]/ { in_step1=1 }
+        /\[STEP 2\/3\]/ { in_step1=0 }
+        in_step1 && /Recall@/ { printf "    %s\n", $0 }
+    ' "$LOG_FILE"
+
+    echo ""
+    echo "  Ranking (recall after re-ranking):"
+    awk '
+        /\[STEP 3\/3\]/ { in_step3=1 }
+        in_step3 && /Recall@/ { printf "    %s\n", $0 }
+    ' "$LOG_FILE"
+
+    echo ""
+    echo "  Step status:"
+    printf "    Conv2Item : %s\n" "$( [ "$STEP1_OK" = true ] && echo OK || echo FAILED )"
+    printf "    Conv2Conv : %s\n" "$( [ "$STEP2_OK" = true ] && echo OK || echo FAILED )"
+    printf "    Ranking   : %s\n" "$( [ "$STEP3_OK" = true ] && echo OK || echo FAILED )"
+    echo ""
+
+} 2>&1 | tee "$LOG_FILE"
+
+echo ""
+echo "Full log saved to: $LOG_FILE"
