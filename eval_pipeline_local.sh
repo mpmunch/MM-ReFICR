@@ -193,6 +193,7 @@ mkdir -p "$LOG_DIR"
     echo "  Ranking (recall after re-ranking):"
     awk '
         /\[STEP 3\/3\]/ { in_step3=1 }
+        /METRIC SUMMARY/ { in_step3=0 }
         in_step3 && /Recall@/ { printf "    %s\n", $0 }
     ' "$LOG_FILE"
 
