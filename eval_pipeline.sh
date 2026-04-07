@@ -25,6 +25,8 @@
 #   bash eval_pipeline.sh inspired conv2conv     # resume from Conv2Conv
 #   bash eval_pipeline.sh inspired ranking       # resume from Ranking
 
+cd "$(dirname "$0")"
+
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
@@ -59,10 +61,10 @@ CAND_RAG_JSON="${DATA_DIR}/test_processed_cand_rag.jsonl"
 # ---------------------------------------------------------------------------
 CONTAINER="p9-reficr_latest.sif"
 SING_ENVS=(
-    "--env" "HF_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/huggingface"
-    "--env" "TORCH_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/torch"
+    "--env" "HF_HOME=${PWD}/.cache/huggingface"
+    "--env" "TORCH_HOME=${PWD}/.cache/torch"
     "--env" "PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128"
-    "--env" "TMPDIR=/ceph/project/P9-ReFICR/ReFICR/tmp"
+    "--env" "TMPDIR=${PWD}/tmp"
 )
 
 # ---------------------------------------------------------------------------
