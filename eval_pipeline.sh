@@ -25,6 +25,12 @@
 #   bash eval_pipeline.sh inspired conv2conv     # resume from Conv2Conv
 #   bash eval_pipeline.sh inspired ranking       # resume from Ranking
 
+if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+    cd "$SLURM_SUBMIT_DIR" || exit 1
+else
+    cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
@@ -57,12 +63,15 @@ CAND_RAG_JSON="${DATA_DIR}/test_processed_cand_rag.jsonl"
 # ---------------------------------------------------------------------------
 # Singularity settings (cluster)
 # ---------------------------------------------------------------------------
-CONTAINER="p9-reficr_latest.sif"
+CONTAINER="/ceph/project/rtm-p10/containers/p9-reficr_latest.sif"
+SING_BINDS=(
+    "--bind" "/ceph/project/rtm-p10:/ceph/project/rtm-p10"
+)
 SING_ENVS=(
-    "--env" "HF_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/huggingface"
-    "--env" "TORCH_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/torch"
+    "--env" "HF_HOME=${PWD}/.cache/huggingface"
+    "--env" "TORCH_HOME=${PWD}/.cache/torch"
     "--env" "PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128"
-    "--env" "TMPDIR=/ceph/project/P9-ReFICR/ReFICR/tmp"
+    "--env" "TMPDIR=${PWD}/tmp"
 )
 
 # ---------------------------------------------------------------------------
@@ -70,7 +79,7 @@ SING_ENVS=(
 # ---------------------------------------------------------------------------
 run_step() {
     local config="$1"
-    singularity exec --nv "${SING_ENVS[@]}" "$CONTAINER" \
+    singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
         python inference_ReRICR.py --config "$config"
 }
 

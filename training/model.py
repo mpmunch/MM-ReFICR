@@ -144,6 +144,8 @@ class ReFICRTrainModel(ReFICR):
         in_batch_neg: bool = True,
         loss_gen_type: str = "mixed",
         loss_gen_factor: float = None,
+        use_image_features: bool = False,
+        image_fusion_weight: float = 0.2,
         **kwargs,
     ):
         super().__init__(**kwargs, is_inference=False)
@@ -159,6 +161,19 @@ class ReFICRTrainModel(ReFICR):
                 self.model.config.vocab_size, loss_gen_type, loss_gen_factor
             )
         self.config = self.model.config # Required for accelerate DeepSpeed integration
+        self.use_image_features = use_image_features
+        self.image_fusion_weight = image_fusion_weight
+
+        emb_dim = int(kwargs["projection"]) if kwargs.get("projection") is not None else self.model.config.hidden_size
+        self.image_projection = torch.nn.Linear(512, emb_dim) if self.use_image_features else None
+
+    def _get_embedding_backbone(self):
+        # Under PEFT/QLoRA wrappers, `.model` may resolve to a CausalLM wrapper
+        # that returns logits. Use the base backbone module for hidden states.
+        if hasattr(self.model, "get_base_model"):
+            base_model = self.model.get_base_model()
+            return getattr(base_model, self.embedding_attr) if self.embedding_attr else base_model
+        return getattr(self.model, self.embedding_attr) if self.embedding_attr else self.model
 
     def encode(self, features):
         if features is None: return None
@@ -171,7 +186,7 @@ class ReFICRTrainModel(ReFICR):
             kwargs['instruction_lens'] = instruction_lens
         elif self.attn[:2] == 'bb':
             kwargs['is_causal'] = False
-        out = (getattr(self.model, self.embedding_attr) if self.embedding_attr else self.model)(**kwargs)[0]
+        out = self._get_embedding_backbone()(**kwargs)[0]
 
         if self.projection is not None:
             out = self.projection(out)
@@ -198,6 +213,8 @@ class ReFICRTrainModel(ReFICR):
         query: Dict[str, torch.Tensor] = None,
         passage: Dict[str, torch.Tensor] = None,
         generative: Dict[str, torch.Tensor] = None,
+        passage_image_emb: Optional[torch.Tensor] = None,
+        passage_image_mask: Optional[torch.Tensor] = None,
         q_reps: Optional[torch.Tensor] = None,
         p_reps: Optional[torch.Tensor] = None,
         q_grad: bool = True,
@@ -234,6 +251,27 @@ class ReFICRTrainModel(ReFICR):
             else:
                 with torch.no_grad():
                     p_reps = self.encode(passage)
+
+        if self.use_image_features and p_reps is not None and passage_image_emb is not None and passage_image_mask is not None:
+            if p_reps.size(0) != passage_image_emb.size(0):
+                raise ValueError(
+                    f"Passage/image batch mismatch: {p_reps.size(0)} vs {passage_image_emb.size(0)}"
+                )
+            image_reps = self.image_projection(
+                passage_image_emb.to(device=p_reps.device, dtype=p_reps.dtype)
+            )
+            if self.normalized:
+                image_reps = torch.nn.functional.normalize(image_reps, dim=-1).to(p_reps.dtype)
+
+            mask = passage_image_mask.to(device=p_reps.device, dtype=p_reps.dtype).unsqueeze(-1)
+            # Strict fallback behavior:
+            # mask=1 -> weighted text/image fusion
+            # mask=0 -> exactly text-only representation
+            p_reps = p_reps + mask * self.image_fusion_weight * (image_reps - p_reps)
+
+            if self.normalized:
+                p_reps = torch.nn.functional.normalize(p_reps, dim=-1).to(p_reps.dtype)
+            p_reps = p_reps.contiguous()
             
         loss_emb = self.emb_loss_fn(
             q_reps, p_reps

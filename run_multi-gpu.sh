@@ -26,8 +26,11 @@ torchrun --nproc_per_node 4 --master_port 25900\
  --pooling_method mean \
  --gradient_checkpointing True \
  --save_strategy "steps" \
- --save_steps 500 \
+ --save_steps 1000 \
  --bf16 True \
  --qlora True \
  --report_to none \
- --in_batch_neg False
+ --in_batch_neg False \
+ --use_image_features True \
+ --image_embeddings_path /ceph/project/rtm-p10/posters/embeddings/inspired_clip_embeddings.pt \
+ --image_fusion_weight 0.2

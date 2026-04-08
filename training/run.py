@@ -330,6 +330,8 @@ def main():
         low_cpu_mem_usage=True,
         quantization_config=quantization_config,
         load_in_4bit=load_in_4bit,
+        use_image_features=model_args.use_image_features,
+        image_fusion_weight=model_args.image_fusion_weight,
     )
     # Add special token for embed
     if model_args.pooling_method == "lasttoken":
@@ -412,7 +414,10 @@ def main():
             embed_eos=embed_eos,
             assistant_bos=ASSISTANT_BOS,
             assistant_eos=ASSISTANT_EOS,
-            prefixlm=data_args.prefixlm
+            prefixlm=data_args.prefixlm,
+            use_image_features=model_args.use_image_features,
+            image_embeddings_path=data_args.image_embeddings_path,
+            image_stats_log_interval=data_args.image_stats_log_interval,
         ),
         "tokenizer": tokenizer,
     }
@@ -526,8 +531,8 @@ def main():
     logger.info("Starting training")
     
     
-    #trainer.train(resume_from_checkpoint=True)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True)
+    #trainer.train()
     
     # The below does not save if state dict type is `SHARDED_STATE_DICT`
     #trainer.save_model()
