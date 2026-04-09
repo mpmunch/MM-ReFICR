@@ -25,7 +25,6 @@
 #   bash eval_pipeline.sh inspired conv2conv     # resume from Conv2Conv
 #   bash eval_pipeline.sh inspired ranking       # resume from Ranking
 
-cd "$(dirname "$0")"
 
 # ---------------------------------------------------------------------------
 # Arguments
