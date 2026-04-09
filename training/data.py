@@ -22,7 +22,6 @@
 
 
 from dataclasses import dataclass
-import re
 import logging
 import math
 import random
@@ -33,47 +32,9 @@ import torch
 from transformers import BatchEncoding, DataCollatorWithPadding, PreTrainedTokenizer
 
 from .arguments import DataArguments
+from .title_utils import extract_title_from_passage as _extract_title_from_passage, title_variants as _title_variants
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_item_title(text: str) -> str:
-    text = text.lower()
-    text = text.replace("&", " and ")
-    text = text.replace("-", " ")
-    text = re.sub(r"\([^()]*\)", " ", text)
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _title_variants(title: str) -> List[str]:
-    base = _normalize_item_title(title)
-    no_year = re.sub(r"\s*\(?\d{4}\)?\s*$", "", title).strip()
-    no_year_norm = _normalize_item_title(no_year)
-    variants = [x for x in [base, no_year_norm] if x]
-    return list(dict.fromkeys(variants))
-
-
-def _extract_title_from_passage(passage_entry: Union[str, list, tuple]) -> str:
-    if isinstance(passage_entry, (tuple, list)):
-        if len(passage_entry) == 0:
-            return ""
-        text = passage_entry[1] if len(passage_entry) > 1 else passage_entry[0]
-    else:
-        text = passage_entry
-
-    if not isinstance(text, str):
-        return ""
-
-    # Most item passages have format: "Title: ... Actors: ...".
-    m = re.search(
-        r"title\s*:\s*(.*?)(?:\s+actors\s*:|\s+director\s*:|\s+genre\s*:|\s+gneres\s*:|$)",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if m:
-        return m.group(1).strip()
-    return ""
 
 
 class CustomDataset(torch.utils.data.Dataset):
@@ -402,6 +363,7 @@ class CustomCollator(DataCollatorWithPadding):
                     cur_len += l
 
         if self.use_image_features and self._image_embeddings is not None and self._image_found_mask is not None:
+            # One image vector per flattened passage row; missing/mismatched rows stay zero with mask=False.
             image_emb = torch.zeros((len(raw_passage), self._image_dim), dtype=torch.float32)
             image_mask = torch.zeros(len(raw_passage), dtype=torch.bool)
 
@@ -412,12 +374,14 @@ class CustomCollator(DataCollatorWithPadding):
             batch_missing_image = 0
 
             for i, p in enumerate(raw_passage):
+                # Parse the title from the original un-tokenized passage text for robust matching.
                 title = _extract_title_from_passage(p)
                 if not title:
                     batch_unstructured += 1
                     continue
                 batch_titles_extracted += 1
                 db_idx = None
+                # Try normalized variants (with/without year) before declaring a miss.
                 for key in _title_variants(title):
                     if key in self._title_to_db_idx:
                         db_idx = self._title_to_db_idx[key]
@@ -447,6 +411,7 @@ class CustomCollator(DataCollatorWithPadding):
             if self._image_log_enabled and (
                 self._stats_batches == 1 or self._stats_batches % max(1, self.image_stats_log_interval) == 0
             ):
+                # Coverage is measured over passages where a structured title could be extracted.
                 batch_title_cov = 100.0 * batch_found / max(batch_titles_extracted, 1)
                 cum_title_cov = 100.0 * self._stats_found / max(self._stats_titles_extracted, 1)
                 logger.info(
@@ -465,6 +430,7 @@ class CustomCollator(DataCollatorWithPadding):
                 if self._missing_title_examples:
                     logger.info("ImageStats sample missing titles: %s", self._missing_title_examples)
 
+                    # Passed to model.forward for optional multimodal fusion.
             features["passage_image_emb"] = image_emb
             features["passage_image_mask"] = image_mask
 

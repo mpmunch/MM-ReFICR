@@ -164,6 +164,7 @@ class ReFICRTrainModel(ReFICR):
         self.use_image_features = use_image_features
         self.image_fusion_weight = image_fusion_weight
 
+        # Project 512-d image embeddings into the same embedding space used by passage reps.
         emb_dim = int(kwargs["projection"]) if kwargs.get("projection") is not None else self.model.config.hidden_size
         self.image_projection = torch.nn.Linear(512, emb_dim) if self.use_image_features else None
 
@@ -257,6 +258,7 @@ class ReFICRTrainModel(ReFICR):
                 raise ValueError(
                     f"Passage/image batch mismatch: {p_reps.size(0)} vs {passage_image_emb.size(0)}"
                 )
+            # Align image features to passage embedding space and dtype/device before fusion.
             image_reps = self.image_projection(
                 passage_image_emb.to(device=p_reps.device, dtype=p_reps.dtype)
             )
@@ -267,6 +269,7 @@ class ReFICRTrainModel(ReFICR):
             # Strict fallback behavior:
             # mask=1 -> weighted text/image fusion
             # mask=0 -> exactly text-only representation
+            # Equivalent form: (1-alpha)*text + alpha*image when mask=1.
             p_reps = p_reps + mask * self.image_fusion_weight * (image_reps - p_reps)
 
             if self.normalized:

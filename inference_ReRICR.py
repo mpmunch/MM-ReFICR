@@ -1,7 +1,6 @@
 from gritlm import GritLM
 from scipy.spatial.distance import cosine
 import json
-import re
 from pathlib import Path
 from jsonargparse import CLI
 import torch.nn.functional as F
@@ -13,35 +12,12 @@ from peft import get_peft_model, LoraConfig, TaskType,PeftModel
 import os
 from typing import Dict, List, Optional, Tuple
 from utils import search_number,extract_movie_name, recall_score, add_roles, is_float
+from training.title_utils import title_variants as _title_variants
 
 from rank_bm25 import BM25Okapi
 from llm2vec import LLM2Vec
 
-def is_float(value):
-    try:
-        float(value)
-        return True
-    except ValueError:
-        return False
-
-
-def _normalize_item_title(text: str) -> str:
-    text = text.lower()
-    text = text.replace("&", " and ")
-    text = text.replace("-", " ")
-    text = re.sub(r"\([^()]*\)", " ", text)
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _title_variants(title: str) -> List[str]:
-    base = _normalize_item_title(title)
-    no_year = re.sub(r"\s*\(?\d{4}\)?\s*$", "", title).strip()
-    no_year_norm = _normalize_item_title(no_year)
-    variants = [x for x in [base, no_year_norm] if x]
-    return list(dict.fromkeys(variants))
-
-
+# load pre-computed image embeddings and metadata,and coverage reporting.
 def _load_image_payload(image_embeddings_path: str) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, int]]:
     payload = torch.load(image_embeddings_path, map_location="cpu")
     if not isinstance(payload, dict):
@@ -55,6 +31,7 @@ def _load_image_payload(image_embeddings_path: str) -> Tuple[torch.Tensor, torch
     db_embeddings = payload["db_embeddings"].to(torch.float32).cpu()
     db_found_mask = payload["db_found_mask"].to(torch.bool).cpu()
 
+    # maps a normalized version of the item's title to first matching row index in the database for faster lookup later
     title_to_db_idx: Dict[str, int] = {}
     for idx, title in enumerate(payload["db_titles"]):
         if not isinstance(title, str):
@@ -78,6 +55,7 @@ def _build_item_image_tensors(
     db_found_mask: torch.Tensor,
     title_to_db_idx: Dict[str, int],
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    # Keep tensors aligned with item_titles; mask tells downstream code which rows are image-backed.
     image_emb = torch.zeros((len(item_titles), db_embeddings.size(1)), dtype=torch.float32)
     image_mask = torch.zeros(len(item_titles), dtype=torch.bool)
 
@@ -106,7 +84,7 @@ def _build_item_image_tensors(
     )
     return image_emb, image_mask
 
-
+# used when image_projection_checkpoint is not explicitly passed
 def _find_latest_checkpoint_dir(target_model_path: str) -> Optional[str]:
     root = Path(target_model_path)
     if not root.exists() or not root.is_dir():
@@ -126,6 +104,10 @@ def _find_latest_checkpoint_dir(target_model_path: str) -> Optional[str]:
 
 
 def _build_linear_from_state(weight: torch.Tensor, bias: Optional[torch.Tensor]) -> torch.nn.Linear:
+    """
+    Builds a PyTorch Linear layer and populates it with pre-trained weights and biases.
+    Sets the layer to evaluation mode for inference.
+    """
     out_features, in_features = weight.shape
     layer = torch.nn.Linear(in_features, out_features, bias=bias is not None)
     layer.weight.data.copy_(weight)
@@ -136,6 +118,10 @@ def _build_linear_from_state(weight: torch.Tensor, bias: Optional[torch.Tensor])
 
 
 def _load_image_projection_from_non_lora(target_model_path: str) -> Optional[torch.nn.Linear]:
+    """
+    Loads the image projection layer from 'non_lora_trainables.bin'.
+    This is necessary because QLoRA fine-tuning does not save entirely new custom layers in the main adapter file.
+    """
     non_lora_path = os.path.join(target_model_path, "non_lora_trainables.bin")
     if not os.path.exists(non_lora_path):
         return None
@@ -154,6 +140,10 @@ def _load_image_projection_from_non_lora(target_model_path: str) -> Optional[tor
 
 
 def _load_image_projection_from_checkpoint(checkpoint_dir: str) -> Optional[torch.nn.Linear]:
+    """
+    Locates and loads the image projection layer from a standard, sharded HuggingFace checkpoint.
+    Reads the index JSON to find the exact file (shard) containing the required weights.
+    """
     if checkpoint_dir is None:
         return None
 
@@ -380,8 +370,10 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                 if image_embeddings_path is None:
                     raise ValueError("use_image_features=True requires image_embeddings_path")
 
+                # Load precomputed image embeddings and title lookup metadata.
                 db_image_embeddings, db_image_found_mask, title_to_db_idx = _load_image_payload(image_embeddings_path)
 
+                # Projection weights may come from non_lora_trainables.bin or a trainer checkpoint shard.
                 image_projection_layer = _load_image_projection_from_non_lora(target_model_path)
                 if image_projection_layer is None:
                     if image_projection_checkpoint is None:
@@ -434,10 +426,14 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                     title_to_db_idx,
                 )
                 with torch.inference_mode():
+                    # Project image vectors to the text embedding space before fusion.
                     image_reps = image_projection_layer(item_image_emb.to(dtype=d_rep_t.dtype))
+                    # p: L2 normalization. dim: which direction to apply normalization. Here we normalize each vector independently (dim=1).
                     image_reps = F.normalize(image_reps, p=2, dim=1)
                     d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
+                    # If mask==0 we keep text-only reps; if mask==1 we move toward image reps by alpha.
                     mask = item_image_mask.to(dtype=d_rep_t.dtype).unsqueeze(-1)
+                    # equals to: text_emb = (1 - alpha * mask) * text_emb + mask * alpha * image_emb
                     d_rep_t = d_rep_t + mask * image_fusion_weight * (image_reps - d_rep_t)
                     d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
                 print(f"Applied multimodal fusion with alpha={image_fusion_weight}")

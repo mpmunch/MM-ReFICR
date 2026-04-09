@@ -32,5 +32,5 @@ torchrun --nproc_per_node 4 --master_port 25900\
  --report_to none \
  --in_batch_neg False \
  --use_image_features True \
- --image_embeddings_path /ceph/project/rtm-p10/posters/embeddings/inspired_clip_embeddings.pt \
+ --image_embeddings_path training/CRS_data/posters/inspired_clip_embeddings.pt \
  --image_fusion_weight 0.2

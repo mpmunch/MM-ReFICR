@@ -8,7 +8,7 @@ embeddings_path: "training/CRS_data/inspired/inspired_item_embeddings.pt"
 base_model_path: "GritLM/GritLM-7B"
 target_model_path: "model_weights/ReFICR_qlora"
 use_image_features: true
-image_embeddings_path: "/ceph/project/rtm-p10/posters/embeddings/inspired_clip_embeddings.pt"
+image_embeddings_path: "training/CRS_data/posters/inspired_clip_embeddings.pt"
 image_fusion_weight: 0.2
 image_projection_checkpoint: "model_weights/ReFICR_qlora/checkpoint-28712"
 to_json: "training/CRS_data/inspired/test_processed_cand.jsonl"
