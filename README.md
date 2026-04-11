@@ -1,5 +1,5 @@
-# ReFICR
-This repo is a Master's project based on creating a multimodal extension on top of the ReFICR system.
+# mm-ReFICR
+This repo is a Master's project based on creating a multimodal extension on top of the [ReFICR](#reficr) system.
 
 ## Setup
 ### Training Data
@@ -58,11 +58,11 @@ The `run_sbatch.sh` is a Slurm wrapper to call the `run_multi-gpu.sh` in a Singu
 The `run_local.sh` is, as described, meant to be used directly in a container and changes directory to the `/work/ReFICR` workspace. The script also includes its own basic logging, working independently of any job scheduler. 
 
 ### Evaluation
-The eval_pipeline scripts calls the scripts defined in #Inference and creates cached files to enable partial re-evaluation while keeping old metrics.
+The eval_pipeline scripts calls the scripts defined in [Inference](#inference) and creates cached files to enable partial re-evaluation while keeping old metrics.
 
 
 ## Inference
-To run inference on the trained QLoRA, the following scripts can be called. (See #Evaluation)
+To run inference on the trained QLoRA, the following scripts can be called. (See [Evaluation](#evaluation))
 
 `Conv2Item` and `Conv2Conv + Ranking` includes Recall Metrics while the `scripts/calc_distn.py` allows to calculate Distinct N after running the `Response Generation` step.
 ### Recommendation
@@ -81,6 +81,8 @@ To run inference on the trained QLoRA, the following scripts can be called. (See
 
 
 ## Acknowledgement
+### ReFICR
 [yt556677/ReFICR](https://github.com/yt556677/ReFICR) The base of our project is built upen the ReFICR project.
 
+### GritLM
 [ContextualAI/gritlm](https://github.com/ContextualAI/gritlm) The original repo, and therefore also ours, is built upon GritLM.
