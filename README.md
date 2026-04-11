@@ -37,16 +37,16 @@ A docker image can be build from the .Dockerfile or pulled from Docker Hub. The 
 
 To run the Docker container locally (requires the NVIDIA Container Toolkit), with shared memory and unlocked memlock:
 
-``
+```
 docker run --rm -it \
 --gpus all \
 --ipc=host \
 --ulimit memlock=-1 --ulimit stack=67108864 \
 mathiaspm/p9-reficr:local
-``
+```
 
 ## Scripts
-Scripts with the `_local` suffix are meant to be used directly inside a container (in our case, provided by UCloud - SDU eScience Center), while the other scripts use the Slurm workload manager and a custom built Singulrity .sif file (in our case, running on AI-LAB - AAU CLAAUDIA).
+Scripts with the `_local` suffix are meant to be used directly inside a container (in our case, provided by UCloud - SDU eScience Center), while the other scripts use the Slurm workload manager and a custom built Singularity .sif file (in our case, running on AI-LAB - AAU CLAAUDIA).
 
 ### Training
 Our ReFICR extension is trained and evaluated on both a multi-GPU setup (NVIDIA L4), and on a single-GPU setup (NVIDIA H100).
@@ -82,7 +82,7 @@ To run inference on the trained QLoRA, the following scripts can be called. (See
 
 ## Acknowledgement
 ### ReFICR
-[yt556677/ReFICR](https://github.com/yt556677/ReFICR) The base of our project is built upen the ReFICR project.
+[yt556677/ReFICR](https://github.com/yt556677/ReFICR) The base of our project is built upon the ReFICR project.
 
 ### GritLM
 [ContextualAI/gritlm](https://github.com/ContextualAI/gritlm) The original repo, and therefore also ours, is built upon GritLM.
