@@ -24,7 +24,7 @@ A virtual environment is recommended for setting up and running the project, if 
 Python 3.10 has been used for development, but 3.8 has also been tested to run correctly.
 For our project, UV has been used to manage the installed Python versions and environments.
 
-#### Install UV (might require specifying a local install location by using the ``--install-dir`` flag on some HPCs)
+#### Install UV (might require specifying a local install location by using the `--install-dir` flag on some HPCs)
 ``uv python install 3.10``
 
 #### Creating the virtual environment
