@@ -6,6 +6,9 @@ cd /work/ReFICR
 export HF_HOME=./.cache/huggingface
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 
+export WANDB_API_KEY="<INSERT API KEY>" #spørg Tim om API key ;)
+export WANDB_PROJECT="MM_ReFICR"
+
 mkdir -p logs
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 LOG_FILE="logs/run_${TIMESTAMP}.log"
@@ -49,6 +52,6 @@ CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node 1 --master_port 25900\
  --save_steps 500 \
  --bf16 True \
  --qlora True \
- --report_to none \
+ --report_to wandb \
  --in_batch_neg False \
  2> >(tee "$ERR_FILE" >&2) | tee "$LOG_FILE"
