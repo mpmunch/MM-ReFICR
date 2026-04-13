@@ -15,7 +15,7 @@ In order to use the bidirectional attention, you need to replace the `modeling_m
 
 The provided `setup/patch_mistral.sh` script should detect the correct install path and replace the file.
 
-!!Be sure to use in a virtual environment!!
+> **Warning:** Be sure to use in a virtual environment.
 
 More details can be found in [ContextualAI/gritlm](https://github.com/ContextualAI/gritlm).
 
@@ -25,12 +25,12 @@ Python 3.10 has been used for development, but 3.8 has also been tested to run c
 For our project, UV has been used to manage the installed Python versions and environments.
 
 #### Install UV (might require specifying a local install location by using the `--install-dir` flag on some HPCs)
-``uv python install 3.10``
+`uv python install 3.10`
 
 #### Creating the virtual environment
-``uv venv --python 3.10``
+`uv venv --python 3.10`
 #### Installing requirements
-``uv pip install -r requirements.txt``
+`uv pip install -r requirements.txt`
 
 ### Docker
 A docker image can be build from the .Dockerfile or pulled from Docker Hub. The local tag is meant to be used for a isolated Docker container, while the `pytorch.Dockerfile` is used for Singularity on the AAU HPC.

@@ -225,7 +225,7 @@ mkdir -p "$LOG_DIR"
     echo "  Conv2Item (retrieval recall before re-ranking):"
     if [ -f "$METRICS_CACHE_CONV2ITEM" ] && [ -s "$METRICS_CACHE_CONV2ITEM" ]; then
         sed 's/^/    /' "$METRICS_CACHE_CONV2ITEM"
-        if [[ "$FROM_STEP" != "conv2item" ]] || [ "$STEP1_OK" != true ]; then
+        if [[ "$FROM_STEP" != "conv2item" ]]; then
             echo "    (cached from previous run)"
         fi
     else
