@@ -10,4 +10,4 @@
 
 # Run script in container
 # singularity exec --nv /ceph/project/python/python_3.10.sif bash run.sh
-singularity exec --nv p9-reficr_latest.sif bash run_multi-gpu.sh
+singularity exec --nv p9-reficr_latest.sif bash scripts/run_multi-gpu.sh

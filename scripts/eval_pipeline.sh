@@ -25,6 +25,7 @@
 #   bash eval_pipeline.sh inspired conv2conv     # resume from Conv2Conv
 #   bash eval_pipeline.sh inspired ranking       # resume from Ranking
 
+
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
@@ -54,15 +55,20 @@ CONV_EMB="${DATA_DIR}/${DATASET}_conv_embeddings.pt"
 CAND_JSON="${DATA_DIR}/test_processed_cand.jsonl"
 CAND_RAG_JSON="${DATA_DIR}/test_processed_cand_rag.jsonl"
 
+# Persistent metric caches — survive between partial runs so the summary
+# can display earlier-step metrics even when those steps are skipped.
+METRICS_CACHE_CONV2ITEM="${LOG_DIR}/metrics_${DATASET}_conv2item.tmp"
+METRICS_CACHE_RANKING="${LOG_DIR}/metrics_${DATASET}_ranking.tmp"
+
 # ---------------------------------------------------------------------------
 # Singularity settings (cluster)
 # ---------------------------------------------------------------------------
 CONTAINER="p9-reficr_latest.sif"
 SING_ENVS=(
-    "--env" "HF_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/huggingface"
-    "--env" "TORCH_HOME=/ceph/project/P9-ReFICR/ReFICR/.cache/torch"
+    "--env" "HF_HOME=${PWD}/.cache/huggingface"
+    "--env" "TORCH_HOME=${PWD}/.cache/torch"
     "--env" "PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128"
-    "--env" "TMPDIR=/ceph/project/P9-ReFICR/ReFICR/tmp"
+    "--env" "TMPDIR=${PWD}/tmp"
 )
 
 # ---------------------------------------------------------------------------
@@ -146,7 +152,10 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 1/3] Conv2Item — Item Retrieval" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        if run_step "config/Conv2Item/${DATASET}_config.yaml"; then
+        STEP_TMP=$(mktemp)
+        run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
+        if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+            grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
             echo ""
             echo "  [STEP 1/3] Finished in $(elapsed $STEP_START) — $(date)"
         else
@@ -154,6 +163,7 @@ mkdir -p "$LOG_DIR"
             echo "  [STEP 1/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP1_OK=false
         fi
+        rm -f "$STEP_TMP"
     else
         banner "[STEP 1/3] Conv2Item — Skipped (resuming from ${FROM_STEP})"
     fi
@@ -192,7 +202,10 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 3/3] Ranking — Item Re-ranking" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        if run_step "config/Ranking/${DATASET}_config.yaml"; then
+        STEP_TMP=$(mktemp)
+        run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
+        if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+            grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
             echo ""
             echo "  [STEP 3/3] Finished in $(elapsed $STEP_START) — $(date)"
         else
@@ -200,6 +213,7 @@ mkdir -p "$LOG_DIR"
             echo "  [STEP 3/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP3_OK=false
         fi
+        rm -f "$STEP_TMP"
     fi
 
     # -----------------------------------------------------------------------
@@ -209,21 +223,25 @@ mkdir -p "$LOG_DIR"
 
     echo ""
     echo "  Conv2Item (retrieval recall before re-ranking):"
-    awk '
-        /\[STEP 1\/3\]/ { in_step1=1; in_step3=0 }
-        /\[STEP 2\/3\]/ { in_step1=0 }
-        /\[STEP 3\/3\]/ { in_step3=1 }
-        /\[STEP 4\/3\]/ { in_step3=0 }
-        in_step1 && /Recall@/ { printf "    %s\n", $0 }
-    ' "$LOG_FILE"
+    if [ -f "$METRICS_CACHE_CONV2ITEM" ] && [ -s "$METRICS_CACHE_CONV2ITEM" ]; then
+        sed 's/^/    /' "$METRICS_CACHE_CONV2ITEM"
+        if [[ "$FROM_STEP" != "conv2item" ]]; then
+            echo "    (cached from previous run)"
+        fi
+    else
+        echo "    (no metrics — step was skipped and no cache found)"
+    fi
 
     echo ""
     echo "  Ranking (recall after re-ranking):"
-    awk '
-        /\[STEP 3\/3\]/ { in_step3=1 }
-        /METRIC SUMMARY/ { in_step3=0 }
-        in_step3 && /Recall@/ { printf "    %s\n", $0 }
-    ' "$LOG_FILE"
+    if [ -f "$METRICS_CACHE_RANKING" ] && [ -s "$METRICS_CACHE_RANKING" ]; then
+        sed 's/^/    /' "$METRICS_CACHE_RANKING"
+        if [ "$STEP3_OK" != true ]; then
+            echo "    (cached from previous run)"
+        fi
+    else
+        echo "    (no metrics — step did not run or failed)"
+    fi
 
     echo ""
     echo "  Step status:"

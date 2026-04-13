@@ -1,7 +1,7 @@
-# --------- Dockerfile for LOCAL/TESTING USE - NOT FOR AAU AI-LAB!! ---------
+# --------- Dockerfile for .sif image used on AAU AI-LAB ---------
 
 # Official PyTorch image (2.1.1) and a compatible CUDA/cuDNN stack.
-FROM nvcr.io/nvidia/pytorch:23.10-py3
+FROM pytorch/pytorch:2.1.1-cuda12.1-cudnn8-runtime
 
 # Sets the working directory in the container
 WORKDIR /app
@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # --- Custom file replacement for bidirectional attention ---
 # Instructions from ReFICR GitHub repo
 # 1. Copy the custom modeling_mistral.py file into the container's /tmp directory.
-COPY modeling_mistral.py /tmp/modeling_mistral.py
+COPY setup/modeling_mistral.py /tmp/modeling_mistral.py
 
 # 2. Find the installed transformers package path and overwrite the original file.
 RUN TRANSFORMERS_PATH=$(python -c "import transformers; import os; print(os.path.dirname(transformers.__file__))") && \

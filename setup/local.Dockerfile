@@ -1,25 +1,27 @@
-# ----- Nonworking old Dockerfile - Base image not compatible -----
-FROM nvcr.io/nvidia/pytorch:23.10-py3
+# --------- Dockerfile for LOCAL/TESTING USE - NOT FOR AAU AI-LAB!! ---------
 
+# Official PyTorch image (2.1.1) and a compatible CUDA/cuDNN stack.
+FROM pytorch/pytorch:2.1.1-cuda12.1-cudnn8-runtime
+
+# Sets the working directory in the container
 WORKDIR /app
 
-COPY requirements.txt .
-
+# --- Set cache directory for huggingface libraries to a writable location ---
+# This resolves warnings about the cache folder by placing it inside our app directory.
 ENV HF_HOME=/app/.cache/huggingface
-ENV TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
-ENV HF_DATASETS_CACHE=/app/.cache/huggingface/datasets
 
 
 COPY requirements.txt .
-# This **should** install torch==2.1.1 over the base image's version.
 
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir --upgrade --force-reinstall transformer-engine
+#This **should** match most of the existing packages in the base image
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 
 # --- Custom file replacement for bidirectional attention ---
-COPY modeling_mistral.py /tmp/modeling_mistral.py
+# Instructions from ReFICR GitHub repo
+# 1. Copy the custom modeling_mistral.py file into the container's /tmp directory.
+COPY setup/modeling_mistral.py /tmp/modeling_mistral.py
 
 # 2. Find the installed transformers package path and overwrite the original file.
 RUN TRANSFORMERS_PATH=$(python -c "import transformers; import os; print(os.path.dirname(transformers.__file__))") && \
@@ -27,12 +29,15 @@ RUN TRANSFORMERS_PATH=$(python -c "import transformers; import os; print(os.path
     rm /tmp/modeling_mistral.py
 
 
+    
+
+# Copy the rest of the application code into the container
 COPY config/ ./config
 COPY training/ ./training
+COPY scripts/ ./scripts
 COPY inference_ReRICR.py .
 COPY ReFICR.py .
 COPY requirements.txt .
-COPY run.sh .
 COPY utils.py .
 
 
@@ -46,4 +51,3 @@ USER reficr-user
 
 EXPOSE 5000
 
-CMD ["sh", "run.sh"]
