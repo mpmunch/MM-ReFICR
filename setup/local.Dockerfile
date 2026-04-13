@@ -21,10 +21,33 @@ RUN pip install --no-cache-dir -r requirements.txt
 # --- Custom file replacement for bidirectional attention ---
 # Instructions from ReFICR GitHub repo
 # 1. Copy the custom modeling_mistral.py file into the container's /tmp directory.
-COPY modeling_mistral.py /tmp/modeling_mistral.py
+COPY setup/modeling_mistral.py /tmp/modeling_mistral.py
 
 # 2. Find the installed transformers package path and overwrite the original file.
 RUN TRANSFORMERS_PATH=$(python -c "import transformers; import os; print(os.path.dirname(transformers.__file__))") && \
     cp /tmp/modeling_mistral.py $TRANSFORMERS_PATH/models/mistral/modeling_mistral.py && \
     rm /tmp/modeling_mistral.py
+
+
+    
+
+# Copy the rest of the application code into the container
+COPY config/ ./config
+COPY training/ ./training
+COPY scripts/ ./scripts
+COPY inference_ReRICR.py .
+COPY ReFICR.py .
+COPY requirements.txt .
+COPY utils.py .
+
+
+
+# Creates a new user called reficr-user and sets it as the user to run the container - this is very nice for security :))
+RUN groupadd -r reficr-group && useradd -r -g reficr-group reficr-user
+
+RUN chown -R reficr-user:reficr-group /app
+
+USER reficr-user
+
+EXPOSE 5000
 

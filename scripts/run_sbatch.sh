@@ -12,4 +12,4 @@ CONTAINER="/ceph/project/rtm-p10/containers/p9-reficr_latest.sif"
 
 # Run script in container
 # singularity exec --nv /ceph/project/python/python_3.10.sif bash run.sh
-singularity exec --nv --bind /ceph:/ceph $CONTAINER bash run_multi-gpu.sh "$@"
+singularity exec --nv --bind /ceph:/ceph $CONTAINER bash scripts/run_multi-gpu.sh "$@"

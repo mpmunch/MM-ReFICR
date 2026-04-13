@@ -1,13 +1,5 @@
 export HF_HOME=./.cache/huggingface
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
-source .env
-
-if [ -z "${WANDB_API_KEY:-}" ]; then
-  echo "Error: WANDB_API_KEY is not set. Please export it in your environment before running this script." >&2
-  exit 1
-fi
-
-export WANDB_PROJECT="MM_ReFICR"
 
 torchrun --nproc_per_node 4 --master_port 25900\
  -m training.run \
@@ -34,9 +26,11 @@ torchrun --nproc_per_node 4 --master_port 25900\
  --pooling_method mean \
  --gradient_checkpointing True \
  --save_strategy "steps" \
- --save_steps 500 \
+ --save_steps 1000 \
  --bf16 True \
  --qlora True \
  --report_to wandb \
- --in_batch_neg False
-
+ --in_batch_neg False \
+ --use_image_features True \
+ --image_embeddings_path training/CRS_data/posters/inspired_clip_embeddings.pt \
+ --image_fusion_weight 0.2
