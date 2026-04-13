@@ -1,12 +1,16 @@
 # cd "$(dirname "$0")"
 cd /work/ReFICR
-
+source .env
 # export PATH="$HOME/ucloud/.local/bin:$PATH"
 # export PATH="$HOME/.local/bin:$PATH"
 export HF_HOME=./.cache/huggingface
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 
-export WANDB_API_KEY="<INSERT API KEY>" #spørg Tim om API key ;)
+if [ -z "${WANDB_API_KEY:-}" ]; then
+  echo "Error: WANDB_API_KEY is not set. Please export it in your environment before running this script." >&2
+  exit 1
+fi
+
 export WANDB_PROJECT="MM_ReFICR"
 
 mkdir -p logs
