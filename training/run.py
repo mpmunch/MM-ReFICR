@@ -545,6 +545,16 @@ def main():
         non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(
             model.model.named_parameters()
         )
+        if (
+            model_args.use_image_features
+            and hasattr(model, "image_projection")
+            and model.image_projection is not None
+        ):
+            # Keep projection weights in non_lora_trainables.bin with stable keys
+            # expected by inference (_load_image_projection_from_non_lora).
+            non_lora_state_dict["image_projection.weight"] = maybe_zero_3(model.image_projection.weight)
+            if model.image_projection.bias is not None:
+                non_lora_state_dict["image_projection.bias"] = maybe_zero_3(model.image_projection.bias)
 
         if training_args.local_rank == 0 or training_args.local_rank == -1:
             #print("model state_dict:", get_peft_state_maybe_zero_3(model.named_parameters(),training_args.lora_bias))
