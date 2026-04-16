@@ -130,7 +130,7 @@ def main():
     global local_rank
     parser = HfArgumentParser((ModelArguments, DataArguments, CustomTrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
+    training_args.run_name = os.getenv("WANDB_NAME", training_args.run_name)
     local_rank = training_args.local_rank
     if (
         os.path.exists(training_args.output_dir)
@@ -330,6 +330,8 @@ def main():
         low_cpu_mem_usage=True,
         quantization_config=quantization_config,
         load_in_4bit=load_in_4bit,
+        use_image_features=model_args.use_image_features,
+        image_fusion_weight=model_args.image_fusion_weight,
     )
     # Add special token for embed
     if model_args.pooling_method == "lasttoken":
@@ -412,7 +414,10 @@ def main():
             embed_eos=embed_eos,
             assistant_bos=ASSISTANT_BOS,
             assistant_eos=ASSISTANT_EOS,
-            prefixlm=data_args.prefixlm
+            prefixlm=data_args.prefixlm,
+            use_image_features=model_args.use_image_features,
+            image_embeddings_path=data_args.image_embeddings_path,
+            image_stats_log_interval=data_args.image_stats_log_interval,
         ),
         "tokenizer": tokenizer,
     }
@@ -481,7 +486,7 @@ def main():
                             "train/global_step": state.global_step,
                         })
 
-        #trainer.add_callback(WandbCustomCallback())
+        trainer.add_callback(WandbCustomCallback())
 
         # Copied from below & added loss_emb/loss_gen
         # https://github.com/huggingface/transformers/blob/cc3e4781854a52cf090ffde28d884a527dab6708/src/transformers/trainer.py#L2699
@@ -540,6 +545,16 @@ def main():
         non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(
             model.model.named_parameters()
         )
+        if (
+            model_args.use_image_features
+            and hasattr(model, "image_projection")
+            and model.image_projection is not None
+        ):
+            # Keep projection weights in non_lora_trainables.bin with stable keys
+            # expected by inference (_load_image_projection_from_non_lora).
+            non_lora_state_dict["image_projection.weight"] = maybe_zero_3(model.image_projection.weight)
+            if model.image_projection.bias is not None:
+                non_lora_state_dict["image_projection.bias"] = maybe_zero_3(model.image_projection.bias)
 
         if training_args.local_rank == 0 or training_args.local_rank == -1:
             #print("model state_dict:", get_peft_state_maybe_zero_3(model.named_parameters(),training_args.lora_bias))

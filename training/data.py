@@ -25,13 +25,14 @@ from dataclasses import dataclass
 import logging
 import math
 import random
-from typing import Iterator, List, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import datasets
 import torch
 from transformers import BatchEncoding, DataCollatorWithPadding, PreTrainedTokenizer
 
 from .arguments import DataArguments
+from .title_utils import extract_title_from_passage as _extract_title_from_passage, title_variants as _title_variants
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,64 @@ class CustomCollator(DataCollatorWithPadding):
     assistant_eos: str = ""
 
     prefixlm: bool = False
+    use_image_features: bool = False
+    image_embeddings_path: Optional[str] = None
+    image_stats_log_interval: int = 100
+
+    def __post_init__(self):
+        self._image_embeddings: Optional[torch.Tensor] = None
+        self._image_found_mask: Optional[torch.Tensor] = None
+        self._title_to_db_idx: Dict[str, int] = {}
+        self._image_dim = 0
+        self._stats_batches = 0
+        self._stats_passages = 0
+        self._stats_titles_extracted = 0
+        self._stats_found = 0
+        self._stats_unstructured = 0
+        self._stats_missing_title_match = 0
+        self._stats_missing_image = 0
+        self._missing_title_examples: List[str] = []
+        self._image_log_enabled = True
+
+        if torch.distributed.is_initialized() and torch.distributed.get_rank() != 0:
+            # Avoid noisy duplicate logs on non-main ranks.
+            self._image_log_enabled = False
+
+        if not self.use_image_features:
+            return
+        if not self.image_embeddings_path:
+            raise ValueError("use_image_features=True requires --image_embeddings_path")
+
+        payload = torch.load(self.image_embeddings_path, map_location="cpu")
+        if not isinstance(payload, dict):
+            raise ValueError(f"Expected image embedding payload dict, got {type(payload)}")
+
+        required = ["db_titles", "db_embeddings", "db_found_mask"]
+        missing = [k for k in required if k not in payload]
+        if missing:
+            raise ValueError(f"Missing keys in image embedding payload: {missing}")
+
+        self._image_embeddings = payload["db_embeddings"].to(torch.float32).cpu()
+        self._image_found_mask = payload["db_found_mask"].to(torch.bool).cpu()
+        self._image_dim = int(self._image_embeddings.size(1))
+
+        for idx, title in enumerate(payload["db_titles"]):
+            if not isinstance(title, str):
+                continue
+            for key in _title_variants(title):
+                if key not in self._title_to_db_idx:
+                    self._title_to_db_idx[key] = idx
+
+        found = int(self._image_found_mask.sum().item())
+        total = int(self._image_found_mask.numel())
+        coverage = 100.0 * found / max(total, 1)
+        logger.info(
+            "Loaded image embeddings for %d normalized titles | db_found=%d/%d (%.2f%%)",
+            len(self._title_to_db_idx),
+            found,
+            total,
+            coverage,
+        )
 
     def __call__(self, features):
         query = [f[0] for f in features]
@@ -198,6 +257,7 @@ class CustomCollator(DataCollatorWithPadding):
         # Flatten if list of lists
         if isinstance(passage[0], list):
             passage = sum(passage, [])
+        raw_passage = passage.copy()
 
         features = {}
 
@@ -301,6 +361,78 @@ class CustomCollator(DataCollatorWithPadding):
                     if (j % 2 == 0) or self.prefixlm:
                         features["generative"]["labels"][i, cur_len:cur_len+l] = -100
                     cur_len += l
+
+        if self.use_image_features and self._image_embeddings is not None and self._image_found_mask is not None:
+            # One image vector per flattened passage row; missing/mismatched rows stay zero with mask=False.
+            image_emb = torch.zeros((len(raw_passage), self._image_dim), dtype=torch.float32)
+            image_mask = torch.zeros(len(raw_passage), dtype=torch.bool)
+
+            batch_titles_extracted = 0
+            batch_found = 0
+            batch_unstructured = 0
+            batch_missing_title_match = 0
+            batch_missing_image = 0
+
+            for i, p in enumerate(raw_passage):
+                # Parse the title from the original un-tokenized passage text for robust matching.
+                title = _extract_title_from_passage(p)
+                if not title:
+                    batch_unstructured += 1
+                    continue
+                batch_titles_extracted += 1
+                db_idx = None
+                # Try normalized variants (with/without year) before declaring a miss.
+                for key in _title_variants(title):
+                    if key in self._title_to_db_idx:
+                        db_idx = self._title_to_db_idx[key]
+                        break
+                if db_idx is None:
+                    batch_missing_title_match += 1
+                    if len(self._missing_title_examples) < 5:
+                        self._missing_title_examples.append(title)
+                    continue
+                if not self._image_found_mask[db_idx]:
+                    batch_missing_image += 1
+                    if len(self._missing_title_examples) < 5:
+                        self._missing_title_examples.append(title)
+                    continue
+                image_emb[i] = self._image_embeddings[db_idx]
+                image_mask[i] = True
+                batch_found += 1
+
+            self._stats_batches += 1
+            self._stats_passages += len(raw_passage)
+            self._stats_titles_extracted += batch_titles_extracted
+            self._stats_found += batch_found
+            self._stats_unstructured += batch_unstructured
+            self._stats_missing_title_match += batch_missing_title_match
+            self._stats_missing_image += batch_missing_image
+
+            if self._image_log_enabled and (
+                self._stats_batches == 1 or self._stats_batches % max(1, self.image_stats_log_interval) == 0
+            ):
+                # Coverage is measured over passages where a structured title could be extracted.
+                batch_title_cov = 100.0 * batch_found / max(batch_titles_extracted, 1)
+                cum_title_cov = 100.0 * self._stats_found / max(self._stats_titles_extracted, 1)
+                logger.info(
+                    "ImageStats batch=%d | batch_found=%d/%d (%.2f%%) | cum_found=%d/%d (%.2f%%) | unstructured=%d | no_title_match=%d | no_image=%d",
+                    self._stats_batches,
+                    batch_found,
+                    batch_titles_extracted,
+                    batch_title_cov,
+                    self._stats_found,
+                    self._stats_titles_extracted,
+                    cum_title_cov,
+                    self._stats_unstructured,
+                    self._stats_missing_title_match,
+                    self._stats_missing_image,
+                )
+                if self._missing_title_examples:
+                    logger.info("ImageStats sample missing titles: %s", self._missing_title_examples)
+
+                    # Passed to model.forward for optional multimodal fusion.
+            features["passage_image_emb"] = image_emb
+            features["passage_image_mask"] = image_mask
 
         return features
 
