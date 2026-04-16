@@ -8,6 +8,9 @@
 #SBATCH --gres=gpu:4
 #SBATCH --time=12:00:00
 
+
+mkdir -p logs
+
 CONTAINER="/ceph/project/rtm-p10/containers/p9-reficr_latest.sif"
 
 # Run script in container
