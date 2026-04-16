@@ -130,7 +130,7 @@ def main():
     global local_rank
     parser = HfArgumentParser((ModelArguments, DataArguments, CustomTrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
+    training_args.run_name = os.getenv("WANDB_NAME", training_args.run_name)
     local_rank = training_args.local_rank
     if (
         os.path.exists(training_args.output_dir)

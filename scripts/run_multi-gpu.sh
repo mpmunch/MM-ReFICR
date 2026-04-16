@@ -7,8 +7,15 @@ if [ -z "${WANDB_API_KEY:-}" ]; then
   exit 1
 fi
 
-export WANDB_PROJECT="MM_ReFICR"
+export WANDB_PROJECT="MM_ReFICR Training"
 
+
+# ------------------------CHANGE PARAMS HERE!! ------------------------
+
+IMAGE_FUSION_WEIGHT=0.2
+export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}" 
+
+# ------------------------------------------------
 torchrun --nproc_per_node 4 --master_port 25900\
  -m training.run \
  --output_dir model_weights/ReFICR_qlora\
@@ -41,4 +48,6 @@ torchrun --nproc_per_node 4 --master_port 25900\
  --in_batch_neg False \
  --use_image_features True \
  --image_embeddings_path training/CRS_data/posters/inspired_clip_embeddings.pt \
- --image_fusion_weight 0.2
+ --image_fusion_weight ${IMAGE_FUSION_WEIGHT} \
+ --max_example_num_per_dataset 10 \
+ --run_name "${WANDB_NAME}" \
