@@ -31,6 +31,14 @@ class ModelArguments:
         }
     )
     projection: int = field(default=None, metadata={"help": "Optional linear learned embedding down projection"})
+    use_image_features: bool = field(
+        default=False,
+        metadata={"help": "Enable passage image fusion from precomputed CLIP embeddings."},
+    )
+    image_fusion_weight: float = field(
+        default=0.2,
+        metadata={"help": "Fusion weight alpha in fused=(1-alpha)*text + alpha*image for passages."},
+    )
 
 @dataclass
 class DataArguments:
@@ -85,6 +93,14 @@ class DataArguments:
         metadata={"help": "If unified with different emb & gen dataset lens, ensure samples are unique in each epoch"}
     )
     prefixlm: bool = field(default=False, metadata={"help": "PrefixLM for generative"})
+    image_embeddings_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to poster embedding .pt payload with db_titles/db_embeddings/db_found_mask."},
+    )
+    image_stats_log_interval: int = field(
+        default=100,
+        metadata={"help": "Log image match coverage stats every N training batches when multimodal is enabled."},
+    )
 
 
     def __post_init__(self):

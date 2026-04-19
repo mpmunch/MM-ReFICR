@@ -25,6 +25,12 @@
 #   bash eval_pipeline.sh inspired conv2conv     # resume from Conv2Conv
 #   bash eval_pipeline.sh inspired ranking       # resume from Ranking
 
+if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+    cd "$SLURM_SUBMIT_DIR" || exit 1
+else
+    SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+    cd "$(dirname -- "$SCRIPT_PATH")/.." || exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Arguments
@@ -63,7 +69,10 @@ METRICS_CACHE_RANKING="${LOG_DIR}/metrics_${DATASET}_ranking.tmp"
 # ---------------------------------------------------------------------------
 # Singularity settings (cluster)
 # ---------------------------------------------------------------------------
-CONTAINER="p9-reficr_latest.sif"
+CONTAINER="/ceph/project/rtm-p10/containers/p9-reficr_latest.sif"
+SING_BINDS=(
+    "--bind" "/ceph/project/rtm-p10:/ceph/project/rtm-p10"
+)
 SING_ENVS=(
     "--env" "HF_HOME=${PWD}/.cache/huggingface"
     "--env" "TORCH_HOME=${PWD}/.cache/torch"
@@ -76,7 +85,7 @@ SING_ENVS=(
 # ---------------------------------------------------------------------------
 run_step() {
     local config="$1"
-    singularity exec --nv "${SING_ENVS[@]}" "$CONTAINER" \
+    singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
         python inference_ReRICR.py --config "$config"
 }
 
@@ -152,7 +161,7 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 1/3] Conv2Item — Item Retrieval" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP=$(mktemp)
+        STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
         run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
@@ -202,7 +211,7 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 3/3] Ranking — Item Re-ranking" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP=$(mktemp)
+        STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
