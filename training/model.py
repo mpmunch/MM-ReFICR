@@ -32,6 +32,7 @@ from transformers import AutoModel
 from transformers.file_utils import ModelOutput
 
 from ReFICR import ReFICR
+from .image_fusion import fuse_text_with_images_linear
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ class ReFICRTrainModel(ReFICR):
         loss_gen_factor: float = None,
         use_image_features: bool = False,
         image_fusion_weight: float = 0.2,
+        image_fusion_mode: str = "linear",
         **kwargs,
     ):
         super().__init__(**kwargs, is_inference=False)
@@ -163,10 +165,16 @@ class ReFICRTrainModel(ReFICR):
         self.config = self.model.config # Required for accelerate DeepSpeed integration
         self.use_image_features = use_image_features
         self.image_fusion_weight = image_fusion_weight
+        self.image_fusion_mode = image_fusion_mode.lower()
 
         # Project 512-d image embeddings into the same embedding space used by passage reps.
         emb_dim = int(kwargs["projection"]) if kwargs.get("projection") is not None else self.model.config.hidden_size
         self.image_projection = torch.nn.Linear(512, emb_dim) if self.use_image_features else None
+
+        if self.image_fusion_mode not in {"linear", "concat"}:
+            raise ValueError(
+                f"Invalid image_fusion_mode: {self.image_fusion_mode}. Expected one of: linear, concat"
+            )
 
     def _get_embedding_backbone(self):
         # Under PEFT/QLoRA wrappers, `.model` may resolve to a CausalLM wrapper
@@ -254,27 +262,23 @@ class ReFICRTrainModel(ReFICR):
                     p_reps = self.encode(passage)
 
         if self.use_image_features and p_reps is not None and passage_image_emb is not None and passage_image_mask is not None:
-            if p_reps.size(0) != passage_image_emb.size(0):
-                raise ValueError(
-                    f"Passage/image batch mismatch: {p_reps.size(0)} vs {passage_image_emb.size(0)}"
+            if self.image_fusion_mode == "linear":
+                p_reps = fuse_text_with_images_linear(
+                    text_reps=p_reps,
+                    image_emb=passage_image_emb,
+                    image_mask=passage_image_mask,
+                    image_projection=self.image_projection,
+                    image_fusion_weight=self.image_fusion_weight,
+                    normalized=self.normalized,
                 )
-            # Align image features to passage embedding space and dtype/device before fusion.
-            image_reps = self.image_projection(
-                passage_image_emb.to(device=p_reps.device, dtype=p_reps.dtype)
-            )
-            if self.normalized:
-                image_reps = torch.nn.functional.normalize(image_reps, dim=-1).to(p_reps.dtype)
-
-            mask = passage_image_mask.to(device=p_reps.device, dtype=p_reps.dtype).unsqueeze(-1)
-            # Strict fallback behavior:
-            # mask=1 -> weighted text/image fusion
-            # mask=0 -> exactly text-only representation
-            # Equivalent form: (1-alpha)*text + alpha*image when mask=1.
-            p_reps = p_reps + mask * self.image_fusion_weight * (image_reps - p_reps)
-
-            if self.normalized:
-                p_reps = torch.nn.functional.normalize(p_reps, dim=-1).to(p_reps.dtype)
-            p_reps = p_reps.contiguous()
+            elif self.image_fusion_mode == "concat":
+                raise NotImplementedError(
+                    "image_fusion_mode='concat' is not implemented yet. Use image_fusion_mode='linear'."
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported image_fusion_mode: {self.image_fusion_mode}"
+                )
             
         loss_emb = self.emb_loss_fn(
             q_reps, p_reps

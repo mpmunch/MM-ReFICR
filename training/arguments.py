@@ -39,6 +39,17 @@ class ModelArguments:
         default=0.2,
         metadata={"help": "Fusion weight alpha in fused=(1-alpha)*text + alpha*image for passages."},
     )
+    image_fusion_mode: str = field(
+        default="linear",
+        metadata={"help": "Image fusion mode for passage reps. Supported: linear (concat reserved for future)."},
+    )
+
+    def __post_init__(self):
+        self.image_fusion_mode = self.image_fusion_mode.lower()
+        if self.image_fusion_mode not in {"linear", "concat"}:
+            raise ValueError(
+                f"Invalid image_fusion_mode: {self.image_fusion_mode}. Expected one of: linear, concat"
+            )
 
 @dataclass
 class DataArguments:

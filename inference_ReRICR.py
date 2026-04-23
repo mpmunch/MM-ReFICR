@@ -12,6 +12,7 @@ from peft import get_peft_model, LoraConfig, TaskType,PeftModel
 import os
 from typing import Dict, List, Optional, Tuple
 from utils import search_number,extract_movie_name, recall_score, add_roles, is_float
+from training.image_fusion import fuse_text_with_images_linear
 from training.title_utils import title_variants as _title_variants
 
 from rank_bm25 import BM25Okapi
@@ -321,10 +322,15 @@ def LLM2Vec_retrieval(queries,documents,rec_lists):
 def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, gen_instr:str=None,from_json:str=None, db_json:str=None, embeddings_path:str=None, base_model_path:str="GritLM/GritLM-7B",
     target_model_path:str=None, to_json:str=None, stored_cand_lst:bool=True, is_lora:bool=True, batch_size:int=8,
     use_image_features: bool=False, image_embeddings_path: str=None, image_fusion_weight: float=0.2,
-    image_projection_checkpoint: str=None):
+    image_projection_checkpoint: str=None, image_fusion_mode: str="linear"):
 
     
     set_seed(123)
+    image_fusion_mode = image_fusion_mode.lower()
+    if image_fusion_mode not in {"linear", "concat"}:
+        raise ValueError(
+            f"Invalid image_fusion_mode: {image_fusion_mode}. Expected one of: linear, concat"
+        )
     
     if is_lora:
         model = apply_lora(base_model_path,target_model_path)
@@ -426,17 +432,25 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                     title_to_db_idx,
                 )
                 with torch.inference_mode():
-                    # Project image vectors to the text embedding space before fusion.
-                    image_reps = image_projection_layer(item_image_emb.to(dtype=d_rep_t.dtype))
-                    # p: L2 normalization. dim: which direction to apply normalization. Here we normalize each vector independently (dim=1).
-                    image_reps = F.normalize(image_reps, p=2, dim=1)
                     d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
-                    # If mask==0 we keep text-only reps; if mask==1 we move toward image reps by alpha.
-                    mask = item_image_mask.to(dtype=d_rep_t.dtype).unsqueeze(-1)
-                    # equals to: text_emb = (1 - alpha * mask) * text_emb + mask * alpha * image_emb
-                    d_rep_t = d_rep_t + mask * image_fusion_weight * (image_reps - d_rep_t)
-                    d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
-                print(f"Applied multimodal fusion with alpha={image_fusion_weight}")
+                    if image_fusion_mode == "linear":
+                        d_rep_t = fuse_text_with_images_linear(
+                            text_reps=d_rep_t,
+                            image_emb=item_image_emb,
+                            image_mask=item_image_mask,
+                            image_projection=image_projection_layer,
+                            image_fusion_weight=image_fusion_weight,
+                            normalized=True,
+                        )
+                        print(f"Applied multimodal fusion with alpha={image_fusion_weight}")
+                    elif image_fusion_mode == "concat":
+                        raise NotImplementedError(
+                            "image_fusion_mode='concat' is not implemented yet. Use image_fusion_mode='linear'."
+                        )
+                    else:
+                        raise ValueError(
+                            f"Unsupported image_fusion_mode: {image_fusion_mode}"
+                        )
 
             rec_lists = []
             for example in tqdm(data):

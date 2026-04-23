@@ -9,6 +9,7 @@ base_model_path: "GritLM/GritLM-7B"
 target_model_path: "model_weights/ReFICR_qlora"
 use_image_features: true
 image_embeddings_path: "training/CRS_data/posters/redial_clip_embeddings.pt"
+image_fusion_mode: "linear"
 image_fusion_weight: 0.2
 image_projection_checkpoint: "model_weights/ReFICR_qlora/checkpoint-28712"
 to_json: "training/CRS_data/redial/test_processed_cand.jsonl"
