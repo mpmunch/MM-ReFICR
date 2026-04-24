@@ -11,9 +11,16 @@ export WANDB_PROJECT="MM_ReFICR Training"
 
 
 # ------------------------CHANGE PARAMS HERE!! ------------------------
-IMAGE_FUSION_MODE=linear  # Options: "linear", "concat"
+IMAGE_FUSION_MODE=concat   # Options: linear or concat
 IMAGE_FUSION_WEIGHT=0.2
-export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}" 
+
+EXTRA_FUSION_ARGS=()
+if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+  EXTRA_FUSION_ARGS+=(--image_fusion_weight "${IMAGE_FUSION_WEIGHT}")
+  export WANDB_NAME="Train-linear-IFW${IMAGE_FUSION_WEIGHT}"
+else
+  export WANDB_NAME="Train-concat"
+fi
 
 # ------------------------------------------------
 torchrun --nproc_per_node 4 --master_port 25900\
@@ -49,5 +56,5 @@ torchrun --nproc_per_node 4 --master_port 25900\
  --use_image_features True \
  --image_embeddings_path training/CRS_data/posters/inspired_clip_embeddings.pt \
  --image_fusion_mode ${IMAGE_FUSION_MODE} \
- --image_fusion_weight ${IMAGE_FUSION_WEIGHT} \
+ "${EXTRA_FUSION_ARGS[@]}" \
  --run_name "${WANDB_NAME}" \

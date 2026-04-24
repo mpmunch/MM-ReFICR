@@ -65,17 +65,37 @@ def fuse_text_with_images_concat(
     image_concat_projection: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
     """
-    Concatenation strategy placeholder.
+    Concatenation strategy with strict text fallback.
 
-    Intended future flow:
+    Flow:
     - project image vectors into embedding space
     - concatenate [text_reps, image_reps]
     - pass through image_concat_projection to return to embedding dimension D
     - keep strict text-only fallback for mask=0 rows
     """
-    raise NotImplementedError(
-        "image_fusion_mode='concat' is not implemented yet. Use image_fusion_mode='linear'."
-    )
+    if text_reps.size(0) != image_emb.size(0):
+        raise ValueError(
+            f"Passage/image batch mismatch: {text_reps.size(0)} vs {image_emb.size(0)}"
+        )
+    if image_concat_projection is None:
+        raise ValueError("image_concat_projection is required for image_fusion_mode='concat'")
+
+    image_reps = image_projection(image_emb.to(device=text_reps.device, dtype=text_reps.dtype))
+    if normalized:
+        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+
+    concat_reps = torch.cat([text_reps, image_reps], dim=-1)
+    fused_candidate = image_concat_projection(concat_reps).to(text_reps.dtype)
+    if normalized:
+        fused_candidate = F.normalize(fused_candidate, dim=-1).to(text_reps.dtype)
+
+    # Strict fallback:
+    # mask=1 -> use concat-fused representation
+    # mask=0 -> keep the original text representation exactly
+    mask = image_mask.to(device=text_reps.device, dtype=text_reps.dtype).unsqueeze(-1)
+    fused_reps = text_reps + mask * (fused_candidate - text_reps)
+
+    return fused_reps.contiguous()
 
 
 def apply_image_fusion(

@@ -170,6 +170,10 @@ class ReFICRTrainModel(ReFICR):
         # Project 512-d image embeddings into the same embedding space used by passage reps.
         emb_dim = int(kwargs["projection"]) if kwargs.get("projection") is not None else self.model.config.hidden_size
         self.image_projection = torch.nn.Linear(512, emb_dim) if self.use_image_features else None
+        # For concat mode, fuse [text_rep, image_rep] back to the original embedding size.
+        self.image_concat_projection = (
+            torch.nn.Linear(emb_dim * 2, emb_dim) if self.use_image_features else None
+        )
 
     def _get_embedding_backbone(self):
         # Under PEFT/QLoRA wrappers, `.model` may resolve to a CausalLM wrapper
@@ -265,6 +269,7 @@ class ReFICRTrainModel(ReFICR):
                 image_projection=self.image_projection,
                 image_fusion_weight=self.image_fusion_weight,
                 normalized=self.normalized,
+                image_concat_projection=self.image_concat_projection,
             )
             
         loss_emb = self.emb_loss_fn(
