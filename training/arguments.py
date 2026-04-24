@@ -3,6 +3,7 @@ import os
 from typing import Optional
 
 from transformers import TrainingArguments
+from .image_fusion import validate_image_fusion_mode
 
 
 @dataclass
@@ -41,15 +42,11 @@ class ModelArguments:
     )
     image_fusion_mode: str = field(
         default="linear",
-        metadata={"help": "Image fusion mode for passage reps. Supported: linear (concat reserved for future)."},
+        metadata={"help": "Image fusion mode for passage reps. Supported: linear and concat."},
     )
 
     def __post_init__(self):
-        self.image_fusion_mode = self.image_fusion_mode.lower()
-        if self.image_fusion_mode not in {"linear", "concat"}:
-            raise ValueError(
-                f"Invalid image_fusion_mode: {self.image_fusion_mode}. Expected one of: linear, concat"
-            )
+        self.image_fusion_mode = validate_image_fusion_mode(self.image_fusion_mode)
 
 @dataclass
 class DataArguments:

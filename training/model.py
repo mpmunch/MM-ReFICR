@@ -32,7 +32,7 @@ from transformers import AutoModel
 from transformers.file_utils import ModelOutput
 
 from ReFICR import ReFICR
-from .image_fusion import fuse_text_with_images_linear
+from .image_fusion import apply_image_fusion, validate_image_fusion_mode
 
 logger = logging.getLogger(__name__)
 
@@ -165,16 +165,11 @@ class ReFICRTrainModel(ReFICR):
         self.config = self.model.config # Required for accelerate DeepSpeed integration
         self.use_image_features = use_image_features
         self.image_fusion_weight = image_fusion_weight
-        self.image_fusion_mode = image_fusion_mode.lower()
+        self.image_fusion_mode = validate_image_fusion_mode(image_fusion_mode)
 
         # Project 512-d image embeddings into the same embedding space used by passage reps.
         emb_dim = int(kwargs["projection"]) if kwargs.get("projection") is not None else self.model.config.hidden_size
         self.image_projection = torch.nn.Linear(512, emb_dim) if self.use_image_features else None
-
-        if self.image_fusion_mode not in {"linear", "concat"}:
-            raise ValueError(
-                f"Invalid image_fusion_mode: {self.image_fusion_mode}. Expected one of: linear, concat"
-            )
 
     def _get_embedding_backbone(self):
         # Under PEFT/QLoRA wrappers, `.model` may resolve to a CausalLM wrapper
@@ -262,23 +257,15 @@ class ReFICRTrainModel(ReFICR):
                     p_reps = self.encode(passage)
 
         if self.use_image_features and p_reps is not None and passage_image_emb is not None and passage_image_mask is not None:
-            if self.image_fusion_mode == "linear":
-                p_reps = fuse_text_with_images_linear(
-                    text_reps=p_reps,
-                    image_emb=passage_image_emb,
-                    image_mask=passage_image_mask,
-                    image_projection=self.image_projection,
-                    image_fusion_weight=self.image_fusion_weight,
-                    normalized=self.normalized,
-                )
-            elif self.image_fusion_mode == "concat":
-                raise NotImplementedError(
-                    "image_fusion_mode='concat' is not implemented yet. Use image_fusion_mode='linear'."
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported image_fusion_mode: {self.image_fusion_mode}"
-                )
+            p_reps = apply_image_fusion(
+                image_fusion_mode=self.image_fusion_mode,
+                text_reps=p_reps,
+                image_emb=passage_image_emb,
+                image_mask=passage_image_mask,
+                image_projection=self.image_projection,
+                image_fusion_weight=self.image_fusion_weight,
+                normalized=self.normalized,
+            )
             
         loss_emb = self.emb_loss_fn(
             q_reps, p_reps

@@ -1,5 +1,15 @@
 import torch
 import torch.nn.functional as F
+from typing import Optional
+
+
+def validate_image_fusion_mode(image_fusion_mode: str) -> str:
+    mode = image_fusion_mode.lower()
+    if mode not in {"linear", "concat"}:
+        raise ValueError(
+            f"Invalid image_fusion_mode: {mode}. Expected one of: linear, concat"
+        )
+    return mode
 
 
 def fuse_text_with_images_linear(
@@ -44,3 +54,59 @@ def fuse_text_with_images_linear(
 
     # Keep output memory layout consistent with surrounding training/inference code.
     return fused_reps.contiguous()
+
+
+def fuse_text_with_images_concat(
+    text_reps: torch.Tensor,
+    image_emb: torch.Tensor,
+    image_mask: torch.Tensor,
+    image_projection: torch.nn.Module,
+    normalized: bool,
+    image_concat_projection: Optional[torch.nn.Module] = None,
+) -> torch.Tensor:
+    """
+    Concatenation strategy placeholder.
+
+    Intended future flow:
+    - project image vectors into embedding space
+    - concatenate [text_reps, image_reps]
+    - pass through image_concat_projection to return to embedding dimension D
+    - keep strict text-only fallback for mask=0 rows
+    """
+    raise NotImplementedError(
+        "image_fusion_mode='concat' is not implemented yet. Use image_fusion_mode='linear'."
+    )
+
+
+def apply_image_fusion(
+    image_fusion_mode: str,
+    text_reps: torch.Tensor,
+    image_emb: torch.Tensor,
+    image_mask: torch.Tensor,
+    image_projection: torch.nn.Module,
+    image_fusion_weight: float,
+    normalized: bool,
+    image_concat_projection: Optional[torch.nn.Module] = None,
+) -> torch.Tensor:
+    """
+    Dispatches to the configured image fusion strategy.
+    """
+    mode = validate_image_fusion_mode(image_fusion_mode)
+    if mode == "linear":
+        return fuse_text_with_images_linear(
+            text_reps=text_reps,
+            image_emb=image_emb,
+            image_mask=image_mask,
+            image_projection=image_projection,
+            image_fusion_weight=image_fusion_weight,
+            normalized=normalized,
+        )
+
+    return fuse_text_with_images_concat(
+        text_reps=text_reps,
+        image_emb=image_emb,
+        image_mask=image_mask,
+        image_projection=image_projection,
+        normalized=normalized,
+        image_concat_projection=image_concat_projection,
+    )
