@@ -11,7 +11,7 @@ from transformers import set_seed, AutoModel, AutoModelForCausalLM, AutoTokenize
 from peft import get_peft_model, LoraConfig, TaskType,PeftModel
 import os
 from typing import Dict, List, Optional, Tuple
-from utils import search_number,extract_movie_name, recall_score, add_roles, is_float
+from utils import search_number,extract_movie_name, recall_score, ndcg_score, bleu_score, add_roles, is_float
 from training.title_utils import title_variants as _title_variants
 
 from rank_bm25 import BM25Okapi
@@ -494,7 +494,7 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
 
             print('length rank:',len(rank))
             print(recall_score(rec_lists,rank,ks=[1,5,10,20,50]))
-            
+            print(ndcg_score(rec_lists, rank, ks=[1,5,10,20,50]))
             if stored_cand_lst:
 
                 for i in range(len(rank)):
@@ -642,7 +642,7 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
             rec_lists = [example["rec_id"] for example in data]
             assert len(rec_lists) == len(rank)
             print(recall_score(rec_lists,rank,ks=[1,5,10,20,50]))
-
+            print(ndcg_score(rec_lists, rank, ks=[1,5,10,20,50]))
 
         if tag == "Dialoge_Manage":
             
@@ -658,6 +658,9 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
         if tag == "Response_Gen":
 
             assert len(pred) == len(data)
+
+            refs = [example.get("resp", "") for example in data]
+            print(bleu_score(pred, refs))
 
             with open(to_json,"w",encoding="utf-8") as fout:
                 for e_id in range(len(data)):
