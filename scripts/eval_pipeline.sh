@@ -69,9 +69,10 @@ METRICS_CACHE_RANKING="${LOG_DIR}/metrics_${DATASET}_ranking.tmp"
 # ---------------------------------------------------------------------------
 # Singularity settings (cluster)
 # ---------------------------------------------------------------------------
-CONTAINER="/ceph/project/rtm-p10/containers/p9-reficr_latest.sif"
+CONTAINER="/ceph/container/python/python_3.10.sif"
 SING_BINDS=(
     "--bind" "/ceph/project/rtm-p10:/ceph/project/rtm-p10"
+    "--bind" "my_venv:/scratch/my_venv"
 )
 SING_ENVS=(
     "--env" "HF_HOME=${PWD}/.cache/huggingface"
@@ -86,6 +87,7 @@ SING_ENVS=(
 run_step() {
     local config="$1"
     singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
+        /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
         python inference_ReRICR.py --config "$config"
 }
 
@@ -263,3 +265,27 @@ mkdir -p "$LOG_DIR"
 
 echo ""
 echo "Full log saved to: $LOG_FILE"
+
+if [ ! -f ".env"]; then
+    echo "Warning: .env file not found — skipping wandb logging"
+    exit 0
+else
+  # Log to wandb 
+  WANDB_PROJECT="MMReFICR Evaluation Pipeline"
+
+  MODEL_PATH="$(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')"
+  RUN_NAME="eval_${DATASET}_${TIMESTAMP}"
+
+  singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
+    /bin/bash -lc "source /scratch/my_venv/bin/activate && python scripts/log_eval_to_wandb.py \
+      --project \"$WANDB_PROJECT\" \
+      --run_name \"$RUN_NAME\" \
+      --dataset \"$DATASET\" \
+      --from_step \"$FROM_STEP\" \
+      --model_path \"$MODEL_PATH\" \
+      --conv2item_file \"$METRICS_CACHE_CONV2ITEM\" \
+      --ranking_file \"$METRICS_CACHE_RANKING\" \
+      --step1_ok \"$STEP1_OK\" \
+      --step2_ok \"$STEP2_OK\" \
+      --step3_ok \"$STEP3_OK\""
+fi
