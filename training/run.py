@@ -32,7 +32,8 @@ import random
 import datasets
 import torch
 import torch.distributed as dist
-from transformers import AutoConfig, AutoTokenizer, HfArgumentParser, Trainer, set_seed
+from transformers import AutoConfig, AutoTokenizer, HfArgumentParser, Trainer, TrainerCallback, set_seed
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 from .arguments import CustomTrainingArguments, DataArguments, ModelArguments
 from .data import CustomCollator, CustomDataset, CustomRandomSampler
@@ -126,21 +127,78 @@ def get_peft_state_non_lora_maybe_zero_3(named_params, require_grad_only=True):
     return to_return
 
 
+class LoRASaveCallback(TrainerCallback):
+    """Saves proper PEFT adapter format at every step checkpoint (for resume) and
+    a full inference-ready QLoRA at the end of each epoch."""
+
+    def __init__(self, model, training_args, model_args):
+        self.model = model
+        self.training_args = training_args
+        self.model_args = model_args
+
+    def _save_lora(self, save_dir):
+        if self.training_args.local_rank not in [0, -1]:
+            return
+        os.makedirs(save_dir, exist_ok=True)
+        state_dict = get_peft_state_maybe_zero_3(
+            self.model.model.named_parameters(), self.training_args.lora_bias
+        )
+        non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(
+            self.model.model.named_parameters()
+        )
+        if (
+            self.model_args.use_image_features
+            and hasattr(self.model, "image_projection")
+            and self.model.image_projection is not None
+        ):
+            non_lora_state_dict["image_projection.weight"] = maybe_zero_3(
+                self.model.image_projection.weight
+            )
+            if self.model.image_projection.bias is not None:
+                non_lora_state_dict["image_projection.bias"] = maybe_zero_3(
+                    self.model.image_projection.bias
+                )
+        self.model.model.config.save_pretrained(save_dir)
+        self.model.model.save_pretrained(save_dir, state_dict=state_dict)
+        torch.save(non_lora_state_dict, os.path.join(save_dir, "non_lora_trainables.bin"))
+
+    def on_save(self, args, state, control, **kwargs):
+        """Overwrite the step checkpoint with proper PEFT adapter format."""
+        if not self.training_args.lora:
+            return
+        checkpoint_dir = os.path.join(
+            args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
+        )
+        self._save_lora(checkpoint_dir)
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        """Save inference-ready QLoRA to epoch{N}/ subdirectory."""
+        if not self.training_args.lora:
+            return
+        epoch_dir = os.path.join(args.output_dir, f"epoch{round(state.epoch or 0)}")
+        self._save_lora(epoch_dir)
+
+
 def main():
     global local_rank
     parser = HfArgumentParser((ModelArguments, DataArguments, CustomTrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     training_args.run_name = os.getenv("WANDB_NAME", training_args.run_name)
     local_rank = training_args.local_rank
-    if (
-        os.path.exists(training_args.output_dir)
-        and os.listdir(training_args.output_dir)
-        and training_args.do_train
-        and not training_args.overwrite_output_dir
-    ):
-        raise ValueError(
-            f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to bypass."
-        )
+    last_checkpoint = None
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+        last_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if last_checkpoint is not None:
+            logger.info(f"Checkpoint detected, resuming training at {last_checkpoint}.")
+        else:
+            # Allow epoch subdirs written by LoRASaveCallback; raise only on other unexpected content
+            non_epoch_contents = [
+                p for p in os.listdir(training_args.output_dir) if not p.startswith("epoch")
+            ]
+            if non_epoch_contents:
+                raise ValueError(
+                    f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to bypass."
+                )
 
     # Setup logging
     logging.basicConfig(
@@ -527,12 +585,13 @@ def main():
 
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
 
+    if training_args.lora:
+        trainer.add_callback(LoRASaveCallback(model, training_args, model_args))
+
     # Training
     logger.info("Starting training")
-    
-    
-    #trainer.train(resume_from_checkpoint=True)
-    trainer.train()
+
+    trainer.train(resume_from_checkpoint=last_checkpoint)
     
     # The below does not save if state dict type is `SHARDED_STATE_DICT`
     #trainer.save_model()
