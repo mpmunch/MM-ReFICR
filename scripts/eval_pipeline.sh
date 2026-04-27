@@ -69,9 +69,10 @@ METRICS_CACHE_RANKING="${LOG_DIR}/metrics_${DATASET}_ranking.tmp"
 # ---------------------------------------------------------------------------
 # Singularity settings (cluster)
 # ---------------------------------------------------------------------------
-CONTAINER="/ceph/project/rtm-p10/containers/p9-reficr_latest.sif"
+CONTAINER="/ceph/container/python/python_3.10.sif"
 SING_BINDS=(
     "--bind" "/ceph/project/rtm-p10:/ceph/project/rtm-p10"
+    "--bind" "my_venv:/scratch/my_venv"
 )
 SING_ENVS=(
     "--env" "HF_HOME=${PWD}/.cache/huggingface"
@@ -86,6 +87,7 @@ SING_ENVS=(
 run_step() {
     local config="$1"
     singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
+        /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
         python inference_ReRICR.py --config "$config"
 }
 
