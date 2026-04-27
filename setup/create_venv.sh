@@ -6,6 +6,7 @@ srun singularity exec /ceph/container/python/python_3.10.sif python -m venv --sy
 
 # Install packages
 srun singularity exec --nv \
+     -B /ceph/project/rtm-p10:/ceph/project/rtm-p10 \
      -B my_venv:/scratch/my_venv \
      -B $HOME/.singularity:/scratch/singularity \
      /ceph/container/python/python_3.10.sif \
@@ -16,6 +17,7 @@ srun singularity exec --nv \
 
 # Activate the virtual environment and run patch_mistral.sh to patch transformers with custom modeling_mistral.py (bidirectional attention).
 srun singularity exec --nv \
+     -B /ceph/project/rtm-p10:/ceph/project/rtm-p10 \
      -B my_venv:/scratch/my_venv \
      /ceph/container/python/python_3.10.sif \
      /bin/bash -c "source /scratch/my_venv/bin/activate && \
