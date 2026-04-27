@@ -166,7 +166,7 @@ mkdir -p "$LOG_DIR"
         STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
         run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
-            grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
+            grep -E "Recall@|NDCG@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
             echo ""
             echo "  [STEP 1/3] Finished in $(elapsed $STEP_START) — $(date)"
         else
@@ -216,7 +216,7 @@ mkdir -p "$LOG_DIR"
         STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
-            grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
+            grep -E "Recall@|NDCG@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
             echo ""
             echo "  [STEP 3/3] Finished in $(elapsed $STEP_START) — $(date)"
         else
@@ -266,10 +266,7 @@ mkdir -p "$LOG_DIR"
 echo ""
 echo "Full log saved to: $LOG_FILE"
 
-if [ ! -f ".env"]; then
-    echo "Warning: .env file not found — skipping wandb logging"
-    exit 0
-else
+  source .env
   # Log to wandb 
   WANDB_PROJECT="MMReFICR Evaluation Pipeline"
 
@@ -288,4 +285,3 @@ else
       --step1_ok \"$STEP1_OK\" \
       --step2_ok \"$STEP2_OK\" \
       --step3_ok \"$STEP3_OK\""
-fi
