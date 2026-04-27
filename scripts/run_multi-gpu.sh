@@ -13,12 +13,22 @@ export WANDB_PROJECT="MM_ReFICR Training"
 # ------------------------CHANGE PARAMS HERE!! ------------------------
 
 IMAGE_FUSION_WEIGHT="${1:-0.2}"
+FUSION_TYPE="${2:-linear}"
 export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}" 
 
 # ------------------------------------------------
+if [ "${FUSION_TYPE}" = "concat" ]; then
+  FUSION_SUFFIX="concat"
+else
+  FUSION_SUFFIX="${IMAGE_FUSION_WEIGHT/./}"
+fi
+
+OUTPUT_DIR="model_weights/qlora_reficr_${FUSION_SUFFIX}"
+echo "Using output dir: ${OUTPUT_DIR}"
+
 torchrun --nproc_per_node 4 --master_port 25900\
  -m training.run \
- --output_dir model_weights/ReFICR_qlora_${IMAGE_FUSION_WEIGHT/./}\
+ --output_dir "${OUTPUT_DIR}"\
  --model_name_or_path GritLM/GritLM-7B \
  --train_data training/toy_data_instruct/ReFICR_Instruct\
  --learning_rate 2e-5 \
