@@ -216,7 +216,7 @@ mkdir -p "$LOG_DIR"
         STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
-            grep -E "Recall@|NDCG@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
+            grep -E "Recall@|NDCG@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
             echo ""
             echo "  [STEP 3/3] Finished in $(elapsed $STEP_START) — $(date)"
         else
