@@ -11,15 +11,9 @@
 
 mkdir -p logs
 
-CONTAINER="/ceph/project/rtm-p10/containers/p9-reficr_latest.sif"
-
-# Run script in container
-# singularity exec --nv /ceph/project/python/python_3.10.sif bash run.sh
-# singularity exec --nv --bind /ceph:/ceph $CONTAINER bash scripts/run_multi-gpu.sh "$@"
-
-
-# Run script with virtual environment
 srun singularity exec --nv \
+     -B /ceph/project/rtm-p10:/ceph/project/rtm-p10 \
      -B my_venv:/scratch/my_venv \
-     /ceph/container/pytorch/python_3.10.sif \
-     /bin/bash -c "source /scratch/my_venv/bin/activate && bash scripts/run_multi-gpu.sh"
+     /ceph/container/python/python_3.10.sif \
+     /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
+     bash scripts/run_multi-gpu.sh "$@"
