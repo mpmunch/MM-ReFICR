@@ -12,13 +12,13 @@ export WANDB_PROJECT="MM_ReFICR Training"
 
 # ------------------------CHANGE PARAMS HERE!! ------------------------
 
-IMAGE_FUSION_WEIGHT=0.2
+IMAGE_FUSION_WEIGHT="${1:-0.2}"
 export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}" 
 
 # ------------------------------------------------
 torchrun --nproc_per_node 4 --master_port 25900\
  -m training.run \
- --output_dir model_weights/ReFICR_qlora\
+ --output_dir model_weights/ReFICR_qlora_${IMAGE_FUSION_WEIGHT/./}\
  --model_name_or_path GritLM/GritLM-7B \
  --train_data training/toy_data_instruct/ReFICR_Instruct\
  --learning_rate 2e-5 \
