@@ -124,3 +124,26 @@ def bleu_score(pred_texts: List[str], ref_texts: List[str], max_n: int = 4, verb
     if verbose:
         print(f"BLEU-4: {bleu:.4f}")
     return bleu
+def mrr_score(gt_list, pred_list, ks=None, verbose=True):
+    if ks is None:
+        ks = [1, 5, 10, 20, 50]
+
+    mrr = {}
+    for k in ks:
+        reciprocal_ranks = []
+        for gt, preds in zip(gt_list, pred_list):
+            gt_set = set(gt)
+            rr = 0.0
+            for rank_idx, pred in enumerate(preds[:k], start=1):
+                if pred in gt_set:
+                    rr = 1.0 / rank_idx
+                    break
+            reciprocal_ranks.append(rr)
+
+        mrr[k] = float(np.mean(reciprocal_ranks)) if reciprocal_ranks else 0.0
+
+    if verbose:
+        for k in ks:
+            print("MRR@{}: {:.4f}".format(k, mrr[k]))
+
+    return mrr

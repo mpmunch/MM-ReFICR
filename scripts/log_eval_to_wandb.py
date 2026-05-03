@@ -6,6 +6,7 @@ from pathlib import Path
 
 RECALL_RE = re.compile(r"Recall@(\d+)\s*[:=]\s*([0-9]*\.?[0-9]+)")
 NDCG_RE = re.compile(r"NDCG@(\d+)\s*[:=]\s*([0-9]*\.?[0-9]+)")
+MRR_RE = re.compile(r"MRR@(\d+)\s*[:=]\s*([0-9]*\.?[0-9]+)")
 
 def parse_metrics(path: str):
     metrics = {}
@@ -20,6 +21,8 @@ def parse_metrics(path: str):
     for k, v in NDCG_RE.findall(text):
         metrics[f"ndcg@{k}"] = float(v)  
 
+    for k, v in MRR_RE.findall(text):
+        metrics[f"MRR@{k}"] = float(v)  
     return metrics
 
 def to_int_bool(x: str) -> int:
