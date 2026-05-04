@@ -11,8 +11,13 @@ export WANDB_PROJECT="MM_ReFICR Training"
 
 
 # ------------------------CHANGE PARAMS HERE!! ------------------------
-IMAGE_FUSION_MODE=concat   # Options: linear or concat
-IMAGE_FUSION_WEIGHT="${1:-0.2}"
+IMAGE_FUSION_MODE="${1:-linear}"   # Options: linear or concat
+IMAGE_FUSION_WEIGHT="${2:-0.2}"
+
+if [[ "${IMAGE_FUSION_MODE}" != "linear" && "${IMAGE_FUSION_MODE}" != "concat" ]]; then
+  echo "Error: IMAGE_FUSION_MODE must be 'linear' or 'concat'. Got: ${IMAGE_FUSION_MODE}" >&2
+  exit 1
+fi
 
 EXTRA_FUSION_ARGS=()
 if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
@@ -22,10 +27,15 @@ else
   export WANDB_NAME="Train-concat"
 fi
 
+OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}"
+if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+  OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}_${IMAGE_FUSION_WEIGHT}"
+fi
+
 # ------------------------------------------------
 torchrun --nproc_per_node 4 --master_port 25900\
  -m training.run \
- --output_dir model_weights/ReFICR_qlora_${IMAGE_FUSION_WEIGHT/./}\
+ --output_dir "model_weights/ReFICR_qlora_${OUTPUT_SUFFIX/./}"\
  --model_name_or_path GritLM/GritLM-7B \
  --train_data training/toy_data_instruct/ReFICR_Instruct\
  --learning_rate 2e-5 \
