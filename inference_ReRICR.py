@@ -661,9 +661,6 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
 
             assert len(pred) == len(data)
 
-            refs = [example.get("resp", "") for example in data]
-            print(bleu_score(pred, refs))
-
             with open(to_json,"w",encoding="utf-8") as fout:
                 for e_id in range(len(data)):
                    
