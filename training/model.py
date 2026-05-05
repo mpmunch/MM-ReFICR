@@ -172,7 +172,9 @@ class ReFICRTrainModel(ReFICR):
         self.image_projection = torch.nn.Linear(512, emb_dim) if self.use_image_features else None
         # For concat mode, fuse [text_rep, image_rep] back to the original embedding size.
         self.image_concat_projection = (
-            torch.nn.Linear(emb_dim * 2, emb_dim) if self.use_image_features else None
+            torch.nn.Linear(emb_dim * 2, emb_dim)
+            if (self.use_image_features and self.image_fusion_mode == "concat")
+            else None
         )
 
     def _get_embedding_backbone(self):
