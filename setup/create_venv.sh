@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Create virtual environment inside the container at the mount path so pip shebangs resolve correctly
+mkdir -p logs
 mkdir -p my_venv
 mkdir -p "$HOME/.singularity/tmp"
 srun singularity exec --nv \
