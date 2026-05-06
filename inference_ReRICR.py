@@ -11,7 +11,7 @@ from transformers import set_seed, AutoModel, AutoModelForCausalLM, AutoTokenize
 from peft import get_peft_model, LoraConfig, TaskType,PeftModel
 import os
 from typing import Dict, List, Optional, Tuple
-from utils import search_number,extract_movie_name, recall_score, ndcg_score, mrr_score, add_roles, is_float
+from utils import search_number,extract_movie_name, add_roles, is_float
 from training.title_utils import title_variants as _title_variants
 
 from rank_bm25 import BM25Okapi
