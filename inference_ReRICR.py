@@ -232,6 +232,59 @@ def _load_image_concat_projection_from_checkpoint(checkpoint_dir: str) -> Option
 
     print(f"Loaded concat projection from checkpoint: {checkpoint_dir}")
     return _build_linear_from_state(w.to(torch.float32), b.to(torch.float32) if b is not None else None)
+
+
+def _load_image_gate_from_non_lora(target_model_path: str) -> Optional[torch.nn.Linear]:
+    """Loads the dynamic LERP gate layer from 'non_lora_trainables.bin'."""
+    non_lora_path = os.path.join(target_model_path, "non_lora_trainables.bin")
+    if not os.path.exists(non_lora_path):
+        return None
+
+    state = torch.load(non_lora_path, map_location="cpu")
+    if not isinstance(state, dict):
+        return None
+
+    w = state.get("image_gate.weight", None)
+    b = state.get("image_gate.bias", None)
+    if w is None:
+        return None
+
+    print("Loaded image gate from non_lora_trainables.bin")
+    return _build_linear_from_state(w.to(torch.float32), b.to(torch.float32) if b is not None else None)
+
+
+def _load_image_gate_from_checkpoint(checkpoint_dir: str) -> Optional[torch.nn.Linear]:
+    """Loads the dynamic LERP gate layer from a standard sharded HuggingFace checkpoint."""
+    if checkpoint_dir is None:
+        return None
+
+    index_path = os.path.join(checkpoint_dir, "pytorch_model.bin.index.json")
+    if not os.path.exists(index_path):
+        return None
+
+    with open(index_path, "r", encoding="utf-8") as f:
+        idx = json.load(f)
+
+    weight_map = idx.get("weight_map", {})
+    w_key = "image_gate.weight"
+    b_key = "image_gate.bias"
+    if w_key not in weight_map:
+        return None
+
+    shard_name = weight_map[w_key]
+    shard_path = os.path.join(checkpoint_dir, shard_name)
+    if not os.path.exists(shard_path):
+        return None
+
+    print(f"Loading image gate shard: {shard_path}")
+    shard_state = torch.load(shard_path, map_location="cpu")
+    w = shard_state.get(w_key, None)
+    b = shard_state.get(b_key, None)
+    if w is None:
+        return None
+
+    print(f"Loaded image gate from checkpoint: {checkpoint_dir}")
+    return _build_linear_from_state(w.to(torch.float32), b.to(torch.float32) if b is not None else None)
         
 #merge the model weights
 def apply_lora(base_model_path, target_model_path):
@@ -422,6 +475,7 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
 
             image_projection_layer = None
             image_concat_projection_layer = None
+            image_gate_layer = None
             db_image_embeddings = None
             db_image_found_mask = None
             title_to_db_idx = None
@@ -455,6 +509,19 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                     if image_concat_projection_layer is None:
                         raise ValueError(
                             "Could not load concat projection weights. Provide --image_projection_checkpoint "
+                            "pointing to a trainer checkpoint directory containing pytorch_model.bin.index.json"
+                        )
+
+                if image_fusion_mode == "dynamic":
+                    image_gate_layer = _load_image_gate_from_non_lora(target_model_path)
+                    if image_gate_layer is None:
+                        if image_projection_checkpoint is None:
+                            image_projection_checkpoint = _find_latest_checkpoint_dir(target_model_path)
+                        image_gate_layer = _load_image_gate_from_checkpoint(image_projection_checkpoint)
+
+                    if image_gate_layer is None:
+                        raise ValueError(
+                            "Could not load image gate weights for dynamic fusion. Provide --image_projection_checkpoint "
                             "pointing to a trainer checkpoint directory containing pytorch_model.bin.index.json"
                         )
 
@@ -508,11 +575,14 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                         image_fusion_weight=image_fusion_weight,
                         normalized=True,
                         image_concat_projection=image_concat_projection_layer,
+                        image_gate=image_gate_layer,
                     )
                     if image_fusion_mode == "linear":
                         print(f"Applied multimodal fusion with alpha={image_fusion_weight}")
                     elif image_fusion_mode == "concat":
                         print("Applied multimodal fusion with concat strategy")
+                    elif image_fusion_mode == "dynamic":
+                        print("Applied multimodal fusion with dynamic LERP gate")
 
             rec_lists = []
             for example in tqdm(data):

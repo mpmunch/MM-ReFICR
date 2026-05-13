@@ -42,7 +42,7 @@ class ModelArguments:
     )
     image_fusion_mode: str = field(
         default="linear",
-        metadata={"help": "Image fusion mode for passage reps. Supported: linear and concat."},
+        metadata={"help": "Image fusion mode for passage reps. Supported: linear, concat, dynamic."},
     )
 
     def __post_init__(self):

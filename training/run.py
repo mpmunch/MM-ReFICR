@@ -532,8 +532,8 @@ def main():
     logger.info("Starting training")
     
     
-    #trainer.train(resume_from_checkpoint=True)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True)
+    #trainer.train()
     
     # The below does not save if state dict type is `SHARDED_STATE_DICT`
     #trainer.save_model()
@@ -565,6 +565,16 @@ def main():
             non_lora_state_dict["image_concat_projection.weight"] = maybe_zero_3(model.image_concat_projection.weight)
             if model.image_concat_projection.bias is not None:
                 non_lora_state_dict["image_concat_projection.bias"] = maybe_zero_3(model.image_concat_projection.bias)
+
+        if (
+            model_args.use_image_features
+            and hasattr(model, "image_gate")
+            and model.image_gate is not None
+        ):
+            # Save dynamic LERP gate for image_fusion_mode='dynamic'.
+            non_lora_state_dict["image_gate.weight"] = maybe_zero_3(model.image_gate.weight)
+            if model.image_gate.bias is not None:
+                non_lora_state_dict["image_gate.bias"] = maybe_zero_3(model.image_gate.bias)
 
         if training_args.local_rank == 0 or training_args.local_rank == -1:
             #print("model state_dict:", get_peft_state_maybe_zero_3(model.named_parameters(),training_args.lora_bias))

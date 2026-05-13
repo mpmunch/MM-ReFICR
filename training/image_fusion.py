@@ -5,11 +5,52 @@ from typing import Optional
 
 def validate_image_fusion_mode(image_fusion_mode: str) -> str:
     mode = image_fusion_mode.lower()
-    if mode not in {"linear", "concat"}:
+    if mode not in {"linear", "concat", "dynamic"}:
         raise ValueError(
-            f"Invalid image_fusion_mode: {mode}. Expected one of: linear, concat"
+            f"Invalid image_fusion_mode: {mode}. Expected one of: linear, concat, dynamic"
         )
     return mode
+
+
+def fuse_text_with_images_dynamic_lerp(
+    text_reps: torch.Tensor,
+    image_emb: torch.Tensor,
+    image_mask: torch.Tensor,
+    image_projection: torch.nn.Module,
+    image_gate: torch.nn.Module,
+    normalized: bool,
+) -> torch.Tensor:
+    """Dynamic LERP fusion with strict text fallback.
+
+    Implements:
+        alpha = sigmoid(W [E_text; E_image_hat] + b)
+        E_fused = (1-alpha) E_text + alpha E_image_hat   if m=1
+                  E_text                               if m=0
+
+    Notes:
+    - alpha is a per-sample scalar in [0, 1] with shape [N, 1]
+    - E_image_hat is the projected (and optionally normalized) image representation
+    """
+    if text_reps.size(0) != image_emb.size(0):
+        raise ValueError(
+            f"Passage/image batch mismatch: {text_reps.size(0)} vs {image_emb.size(0)}"
+        )
+
+    image_reps = image_projection(image_emb.to(device=text_reps.device, dtype=text_reps.dtype))
+    if normalized:
+        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+
+    gate_inp = torch.cat([text_reps, image_reps], dim=-1)
+    # Keep alpha dtype aligned with text reps (important for fp16/bf16 runs).
+    dynamic_alpha = torch.sigmoid(image_gate(gate_inp)).to(dtype=text_reps.dtype)
+
+    mask = image_mask.to(device=text_reps.device, dtype=text_reps.dtype).unsqueeze(-1)
+    fused_reps = text_reps + mask * dynamic_alpha * (image_reps - text_reps)
+
+    if normalized:
+        fused_reps = F.normalize(fused_reps, dim=-1).to(text_reps.dtype)
+
+    return fused_reps.contiguous()
 
 
 def fuse_text_with_images_linear(
@@ -107,6 +148,7 @@ def apply_image_fusion(
     image_fusion_weight: float,
     normalized: bool,
     image_concat_projection: Optional[torch.nn.Module] = None,
+    image_gate: Optional[torch.nn.Module] = None,
 ) -> torch.Tensor:
     """
     Dispatches to the configured image fusion strategy.
@@ -119,6 +161,18 @@ def apply_image_fusion(
             image_mask=image_mask,
             image_projection=image_projection,
             image_fusion_weight=image_fusion_weight,
+            normalized=normalized,
+        )
+
+    if mode == "dynamic":
+        if image_gate is None:
+            raise ValueError("image_gate is required for image_fusion_mode='dynamic'")
+        return fuse_text_with_images_dynamic_lerp(
+            text_reps=text_reps,
+            image_emb=image_emb,
+            image_mask=image_mask,
+            image_projection=image_projection,
+            image_gate=image_gate,
             normalized=normalized,
         )
 
