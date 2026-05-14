@@ -33,7 +33,8 @@ if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
 fi
 
 # ------------------------------------------------
-torchrun --nproc_per_node 4 --master_port 25900\
+MASTER_PORT=$((25000 + SLURM_JOB_ID % 1000))
+torchrun --nproc_per_node 4 --master_port $MASTER_PORT\
  -m training.run \
  --output_dir "model_weights/ReFICR_qlora_${OUTPUT_SUFFIX/./}"\
  --model_name_or_path GritLM/GritLM-7B \
