@@ -5,17 +5,25 @@ import argparse
 import json
 import logging
 import math
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
 import evaluate
 import torch
-from nltk import ngrams
+import nltk
+from nltk import ngrams as nltk_ngrams
+from nltk.tokenize import word_tokenize
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt")
+    nltk.download("punkt_tab")
 
 SPECIAL_TOKENS = [
     "<pad>",
@@ -115,34 +123,54 @@ def compute_crs_bleu(predictions: Sequence[str], references: Sequence[str]) -> d
         "bleu_sent_cnt": sent_cnt,
     }
 
-
-def compute_crs_distinct(predictions: Sequence[str]) -> dict:
+def calculate_distinct_unicrs(sentences, max_k=4):
     """
-    CRS-Lab-style Distinct:
-    distinct@k = number_of_unique_kgrams / number_of_non_empty_responses
+    UniCRS-style:
+      - tokens = pred.split()
+      - dist@k = len(unique k-grams across ALL preds) / sent_cnt
+      - sent_cnt counts non-empty preds (after strip), even if too short for k-grams
     """
-    dist_sets = defaultdict(set)
+    uniq = {k: set() for k in range(1, max_k + 1)}
     sent_cnt = 0
 
-    for pred in predictions:
-        if not pred.strip():
+    for s in sentences:
+        s = (s or "").strip()
+        if not s:
             continue
 
-        tokens = pred.split()
-        for k in range(1, 5):
-            for gram in ngrams(tokens, k):
-                dist_sets[f"dist@{k}"].add(gram)
-
         sent_cnt += 1
+        tokens = s.split()
 
-    if sent_cnt == 0:
-        return {f"dist@{k}": 0.0 for k in range(1, 5)} | {"dist_sent_cnt": 0}
+        for k in range(1, max_k + 1):
+            for ng in nltk_ngrams(tokens, k):
+                uniq[k].add(ng)
 
-    return {
-        **{f"dist@{k}": len(dist_sets[f"dist@{k}"]) / sent_cnt for k in range(1, 5)},
-        "dist_sent_cnt": sent_cnt,
-    }
-
+    report = {f"dist@{k}": (len(uniq[k]) / sent_cnt if sent_cnt else 0.0) for k in range(1, max_k + 1)}
+    report["sent_cnt"] = sent_cnt
+    return report
+def calculate_distinct_n_standard(sentences, max_n=4):
+    """
+    Standard distinct-n metric for n in 1..max_n:
+      - tokens = word_tokenize(sentence.lower())
+      - distinct-n = unique_n / total_n for each n
+    Returns a dict with keys "dist@1", ..., "dist@max_n"
+    """
+    results = {}
+    for n in range(1, max_n + 1):
+        total_ngrams = 0
+        distinct_ngrams = set()
+        for sentence in sentences:
+            tokens = word_tokenize(sentence.lower())
+            if len(tokens) < n:
+                continue
+            ngs = [tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)]
+            distinct_ngrams.update(ngs)
+            total_ngrams += len(ngs)
+        if total_ngrams == 0:
+            results[f"dist@{n}"] = 0.0
+        else:
+            results[f"dist@{n}"] = len(distinct_ngrams) / total_ngrams
+    return results
 
 def compute_rouge(predictions: Sequence[str], references: Sequence[str]) -> dict:
     rouge = evaluate.load("rouge")
@@ -239,11 +267,13 @@ def main() -> None:
 
     bleu_scores = compute_crs_bleu(predictions, references)
     rouge_scores = compute_rouge(predictions, references)
-    dist_scores = compute_crs_distinct(predictions)
+    dist_scores = calculate_distinct_unicrs(predictions, max_k=4) 
+    dist_scores_standard = calculate_distinct_n_standard_test(predictions, 4) 
 
     logger.info("CRS-style BLEU: %s", json.dumps(bleu_scores, indent=2, sort_keys=True))
     logger.info("ROUGE: %s", json.dumps(rouge_scores, indent=2, sort_keys=True))
     logger.info("CRS-style Distinct: %s", json.dumps(dist_scores, indent=2, sort_keys=True))
+    logger.info("Standard Distinct: %s", json.dumps(dist_scores_standard, indent=2, sort_keys=True))
 
     if not args.skip_ppl:
         ppl_scores = compute_perplexity(
