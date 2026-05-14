@@ -12,6 +12,25 @@ def validate_image_fusion_mode(image_fusion_mode: str) -> str:
     return mode
 
 
+def project_image_reps(
+    text_reps: torch.Tensor,
+    image_emb: torch.Tensor,
+    image_projection: torch.nn.Module,
+    normalized: bool,
+) -> torch.Tensor:
+    """Project image embeddings into the same space as text reps.
+
+    This helper keeps dtype/device handling and optional normalization consistent
+    across training, inference, and analysis utilities.
+    """
+    image_reps = image_projection(
+        image_emb.to(device=text_reps.device, dtype=text_reps.dtype)
+    )
+    if normalized:
+        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+    return image_reps
+
+
 def fuse_text_with_images_dynamic_lerp(
     text_reps: torch.Tensor,
     image_emb: torch.Tensor,
@@ -36,9 +55,12 @@ def fuse_text_with_images_dynamic_lerp(
             f"Passage/image batch mismatch: {text_reps.size(0)} vs {image_emb.size(0)}"
         )
 
-    image_reps = image_projection(image_emb.to(device=text_reps.device, dtype=text_reps.dtype))
-    if normalized:
-        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+    image_reps = project_image_reps(
+        text_reps=text_reps,
+        image_emb=image_emb,
+        image_projection=image_projection,
+        normalized=normalized,
+    )
 
     gate_inp = torch.cat([text_reps, image_reps], dim=-1)
     # Keep alpha dtype aligned with text reps (important for fp16/bf16 runs).
@@ -78,10 +100,12 @@ def fuse_text_with_images_linear(
         )
 
     # Align image features to the text embedding space and match dtype/device.
-    image_reps = image_projection(image_emb.to(device=text_reps.device, dtype=text_reps.dtype))
-    if normalized:
-        # Keep projected image vectors on the same scale as text vectors.
-        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+    image_reps = project_image_reps(
+        text_reps=text_reps,
+        image_emb=image_emb,
+        image_projection=image_projection,
+        normalized=normalized,
+    )
 
     # Broadcast mask over embedding dimension.
     # mask=1 -> apply interpolation, mask=0 -> keep text representation exactly.
@@ -121,9 +145,12 @@ def fuse_text_with_images_concat(
     if image_concat_projection is None:
         raise ValueError("image_concat_projection is required for image_fusion_mode='concat'")
 
-    image_reps = image_projection(image_emb.to(device=text_reps.device, dtype=text_reps.dtype))
-    if normalized:
-        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+    image_reps = project_image_reps(
+        text_reps=text_reps,
+        image_emb=image_emb,
+        image_projection=image_projection,
+        normalized=normalized,
+    )
 
     concat_reps = torch.cat([text_reps, image_reps], dim=-1)
     fused_candidate = image_concat_projection(concat_reps).to(text_reps.dtype)
