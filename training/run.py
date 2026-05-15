@@ -332,6 +332,7 @@ def main():
         load_in_4bit=load_in_4bit,
         use_image_features=model_args.use_image_features,
         image_fusion_weight=model_args.image_fusion_weight,
+        image_fusion_mode=model_args.image_fusion_mode,
     )
     # Add special token for embed
     if model_args.pooling_method == "lasttoken":
@@ -555,6 +556,15 @@ def main():
             non_lora_state_dict["image_projection.weight"] = maybe_zero_3(model.image_projection.weight)
             if model.image_projection.bias is not None:
                 non_lora_state_dict["image_projection.bias"] = maybe_zero_3(model.image_projection.bias)
+        if (
+            model_args.use_image_features
+            and hasattr(model, "image_concat_projection")
+            and model.image_concat_projection is not None
+        ):
+            # Save concat fusion projection for image_fusion_mode='concat'.
+            non_lora_state_dict["image_concat_projection.weight"] = maybe_zero_3(model.image_concat_projection.weight)
+            if model.image_concat_projection.bias is not None:
+                non_lora_state_dict["image_concat_projection.bias"] = maybe_zero_3(model.image_concat_projection.bias)
 
         if training_args.local_rank == 0 or training_args.local_rank == -1:
             #print("model state_dict:", get_peft_state_maybe_zero_3(model.named_parameters(),training_args.lora_bias))
