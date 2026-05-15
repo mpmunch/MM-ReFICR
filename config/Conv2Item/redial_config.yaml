@@ -12,4 +12,5 @@ image_embeddings_path: "training/CRS_data/posters/redial_clip_embeddings.pt"
 image_fusion_mode: "linear"
 image_fusion_weight: 0.2
 image_projection_checkpoint: "model_weights/ReFICR_qlora/checkpoint-28712"
+alpha_log_path: "logs/dynamic/analysis/dynamic_alpha_redial.jsonl"
 to_json: "training/CRS_data/redial/test_processed_cand.jsonl"
