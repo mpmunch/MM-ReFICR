@@ -12,18 +12,17 @@
 # Saves all output and a metric summary to a timestamped log file.
 #
 # Usage:
-#   bash eval_pipeline.sh [dataset] [from_step]
-#
+#   bash eval_pipeline.sh [dataset] [from_step] [target_model_path]
 #   dataset   : inspired (default) or redial
 #   from_step : conv2item (default) | conv2conv | ranking
 #               When resuming from a later step, stale files from earlier
 #               steps are preserved so they can be reused.
 #
 # Examples:
-#   bash eval_pipeline.sh                        # full run on inspired
-#   bash eval_pipeline.sh redial                 # full run on redial
-#   bash eval_pipeline.sh inspired conv2conv     # resume from Conv2Conv
-#   bash eval_pipeline.sh inspired ranking       # resume from Ranking
+#   bash eval_pipeline.sh inspired conv2item model_weights/ReFICR_qlora
+#   bash eval_pipeline.sh redial conv2item model_weights/ReFICR_qlora
+#   bash eval_pipeline.sh inspired conv2conv model_weights/ReFICR_qlora
+#   bash eval_pipeline.sh inspired ranking model_weights/ReFICR_qlora
 
 if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
     cd "$SLURM_SUBMIT_DIR" || exit 1
@@ -37,6 +36,7 @@ fi
 # ---------------------------------------------------------------------------
 DATASET="${1:-inspired}"
 FROM_STEP="${2:-conv2item}"
+TARGET_MODEL_PATH="${3:-}"
 
 if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
     echo "Unknown dataset: $DATASET (expected: inspired or redial)"
@@ -48,6 +48,12 @@ if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP"
     exit 1
 fi
 
+if [[ -z "$TARGET_MODEL_PATH" ]]; then
+    echo "ERROR: TARGET_MODEL_PATH not specified!"
+    echo "Usage: bash eval_pipeline.sh [dataset] [from_step] [target_model_path]"
+    echo "  Example: bash eval_pipeline.sh inspired conv2item /path/to/model"
+    exit 1
+fi
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -88,7 +94,7 @@ run_step() {
     local config="$1"
     singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
         /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
-        python inference_ReRICR.py --config "$config"
+        python inference_ReRICR.py --config "$config" --target_model_path "$TARGET_MODEL_PATH"
 }
 
 # ---------------------------------------------------------------------------
@@ -121,7 +127,7 @@ mkdir -p "$LOG_DIR"
         "ReFICR Evaluation Pipeline" \
         "Dataset    : ${DATASET}" \
         "From step  : ${FROM_STEP}" \
-        "Model      : $(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')" \
+        "Model      : ${TARGET_MODEL_PATH}" \
         "Container  : ${CONTAINER}" \
         "Log        : ${LOG_FILE}" \
         "Started    : $(date)"
@@ -164,7 +170,7 @@ mkdir -p "$LOG_DIR"
         STEP_START=$(date +%s)
 
         STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
-        run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
+        run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP" 
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
             echo ""
@@ -270,8 +276,8 @@ echo "Full log saved to: $LOG_FILE"
   # Log to wandb 
   WANDB_PROJECT="MMReFICR Evaluation Pipeline"
 
-  MODEL_PATH="$(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')"
-  RUN_NAME="eval_${DATASET}_${TIMESTAMP}"
+  MODEL_PATH="${TARGET_MODEL_PATH}"
+  RUN_NAME="${TARGET_MODEL_PATH}"
 
   singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
     /bin/bash -lc "source /scratch/my_venv/bin/activate && python scripts/log_eval_to_wandb.py \
