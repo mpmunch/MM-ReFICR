@@ -3,6 +3,7 @@ import os
 from typing import Optional
 
 from transformers import TrainingArguments
+from .image_fusion import validate_image_fusion_mode
 
 
 @dataclass
@@ -39,6 +40,13 @@ class ModelArguments:
         default=0.2,
         metadata={"help": "Fusion weight alpha in fused=(1-alpha)*text + alpha*image for passages."},
     )
+    image_fusion_mode: str = field(
+        default="linear",
+        metadata={"help": "Image fusion mode for passage reps. Supported: linear and concat."},
+    )
+
+    def __post_init__(self):
+        self.image_fusion_mode = validate_image_fusion_mode(self.image_fusion_mode)
 
 @dataclass
 class DataArguments:

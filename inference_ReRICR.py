@@ -12,6 +12,7 @@ from peft import get_peft_model, LoraConfig, TaskType,PeftModel
 import os
 from typing import Dict, List, Optional, Tuple
 from utils import search_number,extract_movie_name, recall_score, ndcg_score, mrr_score, add_roles, is_float
+from training.image_fusion import apply_image_fusion, validate_image_fusion_mode
 from training.title_utils import title_variants as _title_variants
 
 from rank_bm25 import BM25Okapi
@@ -174,6 +175,63 @@ def _load_image_projection_from_checkpoint(checkpoint_dir: str) -> Optional[torc
 
     print(f"Loaded image projection from checkpoint: {checkpoint_dir}")
     return _build_linear_from_state(w.to(torch.float32), b.to(torch.float32) if b is not None else None)
+
+
+def _load_image_concat_projection_from_non_lora(target_model_path: str) -> Optional[torch.nn.Linear]:
+    """
+    Loads the concat fusion projection layer from 'non_lora_trainables.bin'.
+    """
+    non_lora_path = os.path.join(target_model_path, "non_lora_trainables.bin")
+    if not os.path.exists(non_lora_path):
+        return None
+
+    state = torch.load(non_lora_path, map_location="cpu")
+    if not isinstance(state, dict):
+        return None
+
+    w = state.get("image_concat_projection.weight", None)
+    b = state.get("image_concat_projection.bias", None)
+    if w is None:
+        return None
+
+    print("Loaded concat projection from non_lora_trainables.bin")
+    return _build_linear_from_state(w.to(torch.float32), b.to(torch.float32) if b is not None else None)
+
+
+def _load_image_concat_projection_from_checkpoint(checkpoint_dir: str) -> Optional[torch.nn.Linear]:
+    """
+    Locates and loads concat projection from a standard sharded HuggingFace checkpoint.
+    """
+    if checkpoint_dir is None:
+        return None
+
+    index_path = os.path.join(checkpoint_dir, "pytorch_model.bin.index.json")
+    if not os.path.exists(index_path):
+        return None
+
+    with open(index_path, "r", encoding="utf-8") as f:
+        idx = json.load(f)
+
+    weight_map = idx.get("weight_map", {})
+    w_key = "image_concat_projection.weight"
+    b_key = "image_concat_projection.bias"
+    if w_key not in weight_map:
+        return None
+
+    shard_name = weight_map[w_key]
+    shard_path = os.path.join(checkpoint_dir, shard_name)
+    if not os.path.exists(shard_path):
+        return None
+
+    print(f"Loading concat projection shard: {shard_path}")
+    shard_state = torch.load(shard_path, map_location="cpu")
+    w = shard_state.get(w_key, None)
+    b = shard_state.get(b_key, None)
+    if w is None:
+        return None
+
+    print(f"Loaded concat projection from checkpoint: {checkpoint_dir}")
+    return _build_linear_from_state(w.to(torch.float32), b.to(torch.float32) if b is not None else None)
         
 #merge the model weights
 def apply_lora(base_model_path, target_model_path):
@@ -321,10 +379,10 @@ def LLM2Vec_retrieval(queries,documents,rec_lists):
 def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, gen_instr:str=None,from_json:str=None, db_json:str=None, embeddings_path:str=None, base_model_path:str="GritLM/GritLM-7B",
     target_model_path:str=None, to_json:str=None, stored_cand_lst:bool=True, is_lora:bool=True, batch_size:int=8,
     use_image_features: bool=False, image_embeddings_path: str=None, image_fusion_weight: float=0.2,
-    image_projection_checkpoint: str=None):
+    image_projection_checkpoint: str=None, image_fusion_mode: str="linear"):
 
-    
     set_seed(123)
+    image_fusion_mode = validate_image_fusion_mode(image_fusion_mode)
     
     if is_lora:
         model = apply_lora(base_model_path,target_model_path)
@@ -363,6 +421,7 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
             print('doc length:',len(docs))
 
             image_projection_layer = None
+            image_concat_projection_layer = None
             db_image_embeddings = None
             db_image_found_mask = None
             title_to_db_idx = None
@@ -385,6 +444,19 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                         "Could not load image projection weights. Provide --image_projection_checkpoint "
                         "pointing to a trainer checkpoint directory containing pytorch_model.bin.index.json"
                     )
+
+                if image_fusion_mode == "concat":
+                    image_concat_projection_layer = _load_image_concat_projection_from_non_lora(target_model_path)
+                    if image_concat_projection_layer is None:
+                        if image_projection_checkpoint is None:
+                            image_projection_checkpoint = _find_latest_checkpoint_dir(target_model_path)
+                        image_concat_projection_layer = _load_image_concat_projection_from_checkpoint(image_projection_checkpoint)
+
+                    if image_concat_projection_layer is None:
+                        raise ValueError(
+                            "Could not load concat projection weights. Provide --image_projection_checkpoint "
+                            "pointing to a trainer checkpoint directory containing pytorch_model.bin.index.json"
+                        )
 
             if os.path.exists(embeddings_path):
                 print("loading embeddings form file")
@@ -426,17 +498,21 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                     title_to_db_idx,
                 )
                 with torch.inference_mode():
-                    # Project image vectors to the text embedding space before fusion.
-                    image_reps = image_projection_layer(item_image_emb.to(dtype=d_rep_t.dtype))
-                    # p: L2 normalization. dim: which direction to apply normalization. Here we normalize each vector independently (dim=1).
-                    image_reps = F.normalize(image_reps, p=2, dim=1)
                     d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
-                    # If mask==0 we keep text-only reps; if mask==1 we move toward image reps by alpha.
-                    mask = item_image_mask.to(dtype=d_rep_t.dtype).unsqueeze(-1)
-                    # equals to: text_emb = (1 - alpha * mask) * text_emb + mask * alpha * image_emb
-                    d_rep_t = d_rep_t + mask * image_fusion_weight * (image_reps - d_rep_t)
-                    d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
-                print(f"Applied multimodal fusion with alpha={image_fusion_weight}")
+                    d_rep_t = apply_image_fusion(
+                        image_fusion_mode=image_fusion_mode,
+                        text_reps=d_rep_t,
+                        image_emb=item_image_emb,
+                        image_mask=item_image_mask,
+                        image_projection=image_projection_layer,
+                        image_fusion_weight=image_fusion_weight,
+                        normalized=True,
+                        image_concat_projection=image_concat_projection_layer,
+                    )
+                    if image_fusion_mode == "linear":
+                        print(f"Applied multimodal fusion with alpha={image_fusion_weight}")
+                    elif image_fusion_mode == "concat":
+                        print("Applied multimodal fusion with concat strategy")
 
             rec_lists = []
             for example in tqdm(data):
