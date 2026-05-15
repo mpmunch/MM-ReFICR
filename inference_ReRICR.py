@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from utils import search_number,extract_movie_name, recall_score, add_roles, is_float
 from training.image_fusion import apply_image_fusion, validate_image_fusion_mode
 from training.title_utils import title_variants as _title_variants
+from analysis.alpha_logging import compute_dynamic_alpha_and_agreement, log_alpha_records
 
 from rank_bm25 import BM25Okapi
 from llm2vec import LLM2Vec
@@ -432,7 +433,8 @@ def LLM2Vec_retrieval(queries,documents,rec_lists):
 def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, gen_instr:str=None,from_json:str=None, db_json:str=None, embeddings_path:str=None, base_model_path:str="GritLM/GritLM-7B",
     target_model_path:str=None, to_json:str=None, stored_cand_lst:bool=True, is_lora:bool=True, batch_size:int=8,
     use_image_features: bool=False, image_embeddings_path: str=None, image_fusion_weight: float=0.2,
-    image_projection_checkpoint: str=None, image_fusion_mode: str="linear"):
+    image_projection_checkpoint: str=None, image_fusion_mode: str="linear",
+    alpha_log_path: str=None):
 
     set_seed(123)
     image_fusion_mode = validate_image_fusion_mode(image_fusion_mode)
@@ -566,6 +568,28 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                 )
                 with torch.inference_mode():
                     d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
+
+                    if alpha_log_path is not None and image_fusion_mode == "dynamic":
+                        if image_gate_layer is None:
+                            raise ValueError("alpha_log_path requires image_gate_layer for dynamic fusion")
+                        alpha, agreement, mask = compute_dynamic_alpha_and_agreement(
+                            text_reps=d_rep_t,
+                            image_emb=item_image_emb,
+                            image_mask=item_image_mask,
+                            image_projection=image_projection_layer,
+                            image_gate=image_gate_layer,
+                            normalized=True,
+                        )
+                        num_rows = log_alpha_records(
+                            out_path=alpha_log_path,
+                            item_ids=all_names,
+                            alpha=alpha,
+                            agreement=agreement,
+                            mask=mask,
+                            extra_cols={"tag": tag, "mode": mode},
+                        )
+                        print(f"Wrote alpha log ({num_rows} rows) to: {alpha_log_path}")
+
                     d_rep_t = apply_image_fusion(
                         image_fusion_mode=image_fusion_mode,
                         text_reps=d_rep_t,
