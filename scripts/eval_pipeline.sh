@@ -170,7 +170,7 @@ mkdir -p "$LOG_DIR"
         STEP_START=$(date +%s)
 
         STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
-        run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP" 
+        run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
             echo ""
