@@ -51,4 +51,8 @@ CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node 1 --master_port 25900\
  --qlora True \
  --report_to none \
  --in_batch_neg False \
+ --use_image_features True \
+ --image_embeddings_path training/CRS_data/posters/inspired_clip_embeddings.pt \
+ --image_fusion_weight ${IMAGE_FUSION_WEIGHT} \
+ --run_name "${WANDB_NAME}" \
  2> >(tee "$ERR_FILE" >&2) | tee "$LOG_FILE"

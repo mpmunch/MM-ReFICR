@@ -128,7 +128,7 @@ mkdir -p "$LOG_DIR"
         STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
         run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
-            grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
+            grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
             echo ""
             echo "  [STEP 1/3] Finished in $(elapsed $STEP_START) — $(date)"
         else
@@ -178,7 +178,7 @@ mkdir -p "$LOG_DIR"
         STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
-            grep "Recall@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
+            grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
             echo ""
             echo "  [STEP 3/3] Finished in $(elapsed $STEP_START) — $(date)"
         else
@@ -227,3 +227,22 @@ mkdir -p "$LOG_DIR"
 
 echo ""
 echo "Full log saved to: $LOG_FILE"
+
+source .env
+# Log to wandb
+WANDB_PROJECT="MMReFICR Evaluation Pipeline"
+
+MODEL_PATH="$(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')"
+RUN_NAME="eval_${DATASET}_${TIMESTAMP}"
+
+python scripts/log_eval_to_wandb.py \
+  --project "$WANDB_PROJECT" \
+  --run_name "$RUN_NAME" \
+  --dataset "$DATASET" \
+  --from_step "$FROM_STEP" \
+  --model_path "$MODEL_PATH" \
+  --conv2item_file "$METRICS_CACHE_CONV2ITEM" \
+  --ranking_file "$METRICS_CACHE_RANKING" \
+  --step1_ok "$STEP1_OK" \
+  --step2_ok "$STEP2_OK" \
+  --step3_ok "$STEP3_OK"
