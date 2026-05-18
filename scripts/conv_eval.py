@@ -268,7 +268,7 @@ def main() -> None:
     bleu_scores = compute_crs_bleu(predictions, references)
     rouge_scores = compute_rouge(predictions, references)
     dist_scores = calculate_distinct_unicrs(predictions, max_k=4) 
-    dist_scores_standard = calculate_distinct_n_standard_test(predictions, 4) 
+    dist_scores_standard = calculate_distinct_n_standard(predictions, 4) 
 
     logger.info("CRS-style BLEU: %s", json.dumps(bleu_scores, indent=2, sort_keys=True))
     logger.info("ROUGE: %s", json.dumps(rouge_scores, indent=2, sort_keys=True))
