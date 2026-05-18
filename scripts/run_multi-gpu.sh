@@ -11,15 +11,32 @@ export WANDB_PROJECT="MM_ReFICR Training"
 
 
 # ------------------------CHANGE PARAMS HERE!! ------------------------
+IMAGE_FUSION_MODE="${1:-linear}"   # Options: linear or concat
+IMAGE_FUSION_WEIGHT="${2:-0.2}"
 
-IMAGE_FUSION_WEIGHT="${1:-0.2}"
-export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}" 
+if [[ "${IMAGE_FUSION_MODE}" != "linear" && "${IMAGE_FUSION_MODE}" != "concat" ]]; then
+  echo "Error: IMAGE_FUSION_MODE must be 'linear' or 'concat'. Got: ${IMAGE_FUSION_MODE}" >&2
+  exit 1
+fi
+
+EXTRA_FUSION_ARGS=()
+if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+  EXTRA_FUSION_ARGS+=(--image_fusion_weight "${IMAGE_FUSION_WEIGHT}")
+  export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}"
+else
+  export WANDB_NAME="Train-concat"
+fi
+
+OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}"
+if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+  OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}_${IMAGE_FUSION_WEIGHT}"
+fi
 
 # ------------------------------------------------
 MASTER_PORT=$((25000 + SLURM_JOB_ID % 1000))
 torchrun --nproc_per_node 4 --master_port $MASTER_PORT\
  -m training.run \
- --output_dir model_weights/ReFICR_qlora_${IMAGE_FUSION_WEIGHT/./}\
+ --output_dir "model_weights/ReFICR_qlora_${OUTPUT_SUFFIX/./}"\
  --model_name_or_path GritLM/GritLM-7B \
  --train_data training/toy_data_instruct/ReFICR_Instruct\
  --learning_rate 2e-5 \
@@ -49,5 +66,6 @@ torchrun --nproc_per_node 4 --master_port $MASTER_PORT\
  --in_batch_neg False \
  --use_image_features True \
  --image_embeddings_path training/CRS_data/posters/inspired_clip_embeddings.pt \
- --image_fusion_weight ${IMAGE_FUSION_WEIGHT} \
+ --image_fusion_mode ${IMAGE_FUSION_MODE} \
+ "${EXTRA_FUSION_ARGS[@]}" \
  --run_name "${WANDB_NAME}" \
