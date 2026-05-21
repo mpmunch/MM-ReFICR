@@ -90,8 +90,8 @@ def main():
         wandb.save(str(log_path))
 
     response_gen_file = Path(args.response_gen_file)
-    if response_gen_file.exists():   
-        wandb.save(args.response_gen_file) 
+    if response_gen_file.exists():
+        wandb.save(str(response_gen_file))
 
     wandb.finish()
 

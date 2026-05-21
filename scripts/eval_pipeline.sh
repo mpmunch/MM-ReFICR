@@ -271,9 +271,22 @@ mkdir -p "$LOG_DIR"
 } 2>&1 | tee "$LOG_FILE"
 
 TO_JSON="$TARGET_MODEL_PATH/test_processed_gen.jsonl"
-singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
-    /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
-      python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml"  --target_model_path "$TARGET_MODEL_PATH" --to_json "$TO_JSON"  
+{
+    banner "[STEP 4/4] Response Generation" "Started : $(date)" "Output  : ${TO_JSON}"
+    STEP_START=$(date +%s)
+
+    singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
+        /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
+        python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --target_model_path "$TARGET_MODEL_PATH" --to_json "$TO_JSON"
+
+    RESPONSE_GEN_STATUS=${PIPESTATUS[0]}
+    echo ""
+    if [ "$RESPONSE_GEN_STATUS" -eq 0 ]; then
+        echo "  [STEP 4/4] Finished in $(elapsed $STEP_START) — $(date)"
+    else
+        echo "  [STEP 4/4] FAILED after $(elapsed $STEP_START) — $(date)"
+    fi
+} 2>&1 | tee -a "$LOG_FILE"
 
 echo ""
 echo "Full log saved to: $LOG_FILE"
