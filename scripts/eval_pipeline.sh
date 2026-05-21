@@ -34,9 +34,9 @@ fi
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
-DATASET="${1:-inspired}"
-FROM_STEP="${2:-conv2item}"
-TARGET_MODEL_PATH="${3:-}"
+TARGET_MODEL_PATH="${1:-}"
+DATASET="${2:-inspired}"
+FROM_STEP="${3:-conv2item}"
 
 if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
     echo "Unknown dataset: $DATASET (expected: inspired or redial)"
