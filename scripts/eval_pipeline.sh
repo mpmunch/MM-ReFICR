@@ -12,17 +12,18 @@
 # Saves all output and a metric summary to a timestamped log file.
 #
 # Usage:
-#   bash eval_pipeline.sh [dataset] [from_step] [target_model_path]
-#   dataset   : inspired (default) or redial
-#   from_step : conv2item (default) | conv2conv | ranking
+#   bash eval_pipeline.sh [target_model_path] [dataset] [from_step]
+#   target_model_path : path to the model to evaluate
+#   dataset           : inspired (default) or redial
+#   from_step         : conv2item (default) | conv2conv | ranking
 #               When resuming from a later step, stale files from earlier
 #               steps are preserved so they can be reused.
 #
 # Examples:
-#   bash eval_pipeline.sh inspired conv2item model_weights/ReFICR_qlora
-#   bash eval_pipeline.sh redial conv2item model_weights/ReFICR_qlora
-#   bash eval_pipeline.sh inspired conv2conv model_weights/ReFICR_qlora
-#   bash eval_pipeline.sh inspired ranking model_weights/ReFICR_qlora
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired conv2item
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora redial conv2item
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired conv2conv
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired ranking
 
 if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
     cd "$SLURM_SUBMIT_DIR" || exit 1
@@ -50,8 +51,8 @@ fi
 
 if [[ -z "$TARGET_MODEL_PATH" ]]; then
     echo "ERROR: TARGET_MODEL_PATH not specified!"
-    echo "Usage: bash eval_pipeline.sh [dataset] [from_step] [target_model_path]"
-    echo "  Example: bash eval_pipeline.sh inspired conv2item /path/to/model"
+    echo "Usage: bash eval_pipeline.sh [target_model_path] [dataset] [from_step]"
+    echo "  Example: bash eval_pipeline.sh /path/to/model inspired conv2item"
     exit 1
 fi
 # ---------------------------------------------------------------------------
@@ -268,6 +269,11 @@ mkdir -p "$LOG_DIR"
     echo ""
 
 } 2>&1 | tee "$LOG_FILE"
+
+TO_JSON="$TARGET_MODEL_PATH/test_processed_gen.jsonl"
+singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
+    /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
+      python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml"  --target_model_path "$TARGET_MODEL_PATH" --to_json "$TO_JSON"  
 
 echo ""
 echo "Full log saved to: $LOG_FILE"
