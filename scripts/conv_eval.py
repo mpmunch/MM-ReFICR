@@ -237,7 +237,7 @@ def compute_perplexity(
 def main() -> None:
     """
     run like this: 
-    python score_generation_metrics.py --input test_processed_gen1.jsonl --log-file metrics.log
+    python scripts/conv_eval.py --input test_processed_gen1.jsonl --log-file metrics.log
     """
 
     parser = argparse.ArgumentParser()
