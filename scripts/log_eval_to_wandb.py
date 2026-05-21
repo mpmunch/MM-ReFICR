@@ -40,6 +40,7 @@ def main():
 
     parser.add_argument("--conv2item_file", required=True)
     parser.add_argument("--ranking_file", required=True)
+    parser.add_argument("--response_gen_file", required=True)  
 
     parser.add_argument("--step1_ok", required=True)
     parser.add_argument("--step2_ok", required=True)
@@ -87,6 +88,8 @@ def main():
     log_path = Path("logs") / f"{args.run_name}.log"
     if log_path.exists():
         wandb.save(str(log_path))
+    if response_gen_file.exists():   
+        wandb.save(args.response_gen_file) 
 
     wandb.finish()
 
