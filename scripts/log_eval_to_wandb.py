@@ -88,6 +88,8 @@ def main():
     log_path = Path("logs") / f"{args.run_name}.log"
     if log_path.exists():
         wandb.save(str(log_path))
+
+    response_gen_file = Path(args.response_gen_file)
     if response_gen_file.exists():   
         wandb.save(args.response_gen_file) 
 

@@ -283,7 +283,7 @@ echo "Full log saved to: $LOG_FILE"
   WANDB_PROJECT="MMReFICR Evaluation Pipeline"
 
   MODEL_PATH="${TARGET_MODEL_PATH}"
-  RUN_NAME="${TARGET_MODEL_PATH}"
+  RUN_NAME="eval_${DATASET}_$(basename "$TARGET_MODEL_PATH")"
 
   singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
     /bin/bash -lc "source /scratch/my_venv/bin/activate && python scripts/log_eval_to_wandb.py \
