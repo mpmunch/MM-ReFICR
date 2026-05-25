@@ -11,7 +11,7 @@ from transformers import set_seed, AutoModel, AutoModelForCausalLM, AutoTokenize
 from peft import get_peft_model, LoraConfig, TaskType,PeftModel
 import os
 from typing import Dict, List, Optional, Tuple
-from utils import search_number,extract_movie_name, recall_score, add_roles, is_float
+from utils import search_number,extract_movie_name, recall_score, ndcg_score, mrr_score, add_roles, is_float
 from training.image_fusion import apply_image_fusion, validate_image_fusion_mode
 from training.title_utils import title_variants as _title_variants
 from analysis.alpha_logging import compute_dynamic_alpha_and_agreement, log_alpha_records
@@ -664,7 +664,8 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
 
             print('length rank:',len(rank))
             print(recall_score(rec_lists,rank,ks=[1,5,10,20,50]))
-            
+            print(ndcg_score(rec_lists, rank, ks=[1,5,10,20,50]))
+            print(mrr_score(rec_lists, rank, ks=[1,5,10,20,50]))
             if stored_cand_lst:
 
                 for i in range(len(rank)):
@@ -812,7 +813,8 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
             rec_lists = [example["rec_id"] for example in data]
             assert len(rec_lists) == len(rank)
             print(recall_score(rec_lists,rank,ks=[1,5,10,20,50]))
-
+            print(ndcg_score(rec_lists, rank, ks=[1,5,10,20,50]))
+            print(mrr_score(rec_lists, rank, ks=[1,5,10,20,50]))
 
         if tag == "Dialoge_Manage":
             

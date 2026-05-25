@@ -5,13 +5,20 @@ from typing import Optional
 
 def validate_image_fusion_mode(image_fusion_mode: str) -> str:
     mode = image_fusion_mode.lower()
+<<<<<<< HEAD
     if mode not in {"linear", "concat", "dynamic"}:
         raise ValueError(
             f"Invalid image_fusion_mode: {mode}. Expected one of: linear, concat, dynamic"
+=======
+    if mode not in {"linear", "concat"}:
+        raise ValueError(
+            f"Invalid image_fusion_mode: {mode}. Expected one of: linear, concat"
+>>>>>>> main
         )
     return mode
 
 
+<<<<<<< HEAD
 def project_image_reps(
     text_reps: torch.Tensor,
     image_emb: torch.Tensor,
@@ -75,6 +82,8 @@ def fuse_text_with_images_dynamic_lerp(
     return fused_reps.contiguous()
 
 
+=======
+>>>>>>> main
 def fuse_text_with_images_linear(
     text_reps: torch.Tensor,
     image_emb: torch.Tensor,
@@ -100,12 +109,19 @@ def fuse_text_with_images_linear(
         )
 
     # Align image features to the text embedding space and match dtype/device.
+<<<<<<< HEAD
     image_reps = project_image_reps(
         text_reps=text_reps,
         image_emb=image_emb,
         image_projection=image_projection,
         normalized=normalized,
     )
+=======
+    image_reps = image_projection(image_emb.to(device=text_reps.device, dtype=text_reps.dtype))
+    if normalized:
+        # Keep projected image vectors on the same scale as text vectors.
+        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+>>>>>>> main
 
     # Broadcast mask over embedding dimension.
     # mask=1 -> apply interpolation, mask=0 -> keep text representation exactly.
@@ -145,12 +161,18 @@ def fuse_text_with_images_concat(
     if image_concat_projection is None:
         raise ValueError("image_concat_projection is required for image_fusion_mode='concat'")
 
+<<<<<<< HEAD
     image_reps = project_image_reps(
         text_reps=text_reps,
         image_emb=image_emb,
         image_projection=image_projection,
         normalized=normalized,
     )
+=======
+    image_reps = image_projection(image_emb.to(device=text_reps.device, dtype=text_reps.dtype))
+    if normalized:
+        image_reps = F.normalize(image_reps, dim=-1).to(text_reps.dtype)
+>>>>>>> main
 
     concat_reps = torch.cat([text_reps, image_reps], dim=-1)
     fused_candidate = image_concat_projection(concat_reps).to(text_reps.dtype)
@@ -175,7 +197,10 @@ def apply_image_fusion(
     image_fusion_weight: float,
     normalized: bool,
     image_concat_projection: Optional[torch.nn.Module] = None,
+<<<<<<< HEAD
     image_gate: Optional[torch.nn.Module] = None,
+=======
+>>>>>>> main
 ) -> torch.Tensor:
     """
     Dispatches to the configured image fusion strategy.
@@ -191,6 +216,7 @@ def apply_image_fusion(
             normalized=normalized,
         )
 
+<<<<<<< HEAD
     if mode == "dynamic":
         if image_gate is None:
             raise ValueError("image_gate is required for image_fusion_mode='dynamic'")
@@ -203,6 +229,8 @@ def apply_image_fusion(
             normalized=normalized,
         )
 
+=======
+>>>>>>> main
     return fuse_text_with_images_concat(
         text_reps=text_reps,
         image_emb=image_emb,
