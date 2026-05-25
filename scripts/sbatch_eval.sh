@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: bash scripts/sbatch_eval.sh <weight_id> [from_step]
-#   weight_id  : suffix after ReFICR_qlora_ (e.g. 09)
+#   weight_id  : suffix after ReFICR_qlora_linear_ (e.g. 09)
 #   from_step  : conv2item (default) | conv2conv | ranking
 #
 # Submits eval_pipeline.sh for both inspired and redial datasets.
@@ -15,7 +15,7 @@ if [[ -z "$WEIGHT_ID" ]]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MODEL_PATH="${REPO_ROOT}/model_weights/ReFICR_qlora_${WEIGHT_ID}"
+MODEL_PATH="${REPO_ROOT}/model_weights/ReFICR_qlora_linear_${WEIGHT_ID}"
 
 if [[ ! -d "$MODEL_PATH" ]]; then
     echo "Error: model directory not found: ${MODEL_PATH}"
