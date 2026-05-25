@@ -307,6 +307,7 @@ echo "Full log saved to: $LOG_FILE"
       --model_path \"$MODEL_PATH\" \
       --conv2item_file \"$METRICS_CACHE_CONV2ITEM\" \
       --ranking_file \"$METRICS_CACHE_RANKING\" \
+      --log_file \"$LOG_FILE\" \
       --response_gen_file \"$TO_JSON\" \
       --step1_ok \"$STEP1_OK\" \
       --step2_ok \"$STEP2_OK\" \
