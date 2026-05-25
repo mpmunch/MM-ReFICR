@@ -14,8 +14,21 @@ if [[ -z "$WEIGHT_ID" ]]; then
     exit 1
 fi
 
-MODEL_PATH="model_weights/ReFICR_qlora_${WEIGHT_ID}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODEL_PATH="${REPO_ROOT}/model_weights/ReFICR_qlora_${WEIGHT_ID}"
+
+if [[ ! -d "$MODEL_PATH" ]]; then
+    echo "Error: model directory not found: ${MODEL_PATH}"
+    exit 1
+fi
+
+if [[ ! -f "${MODEL_PATH}/adapter_config.json" ]]; then
+    echo "Error: adapter_config.json not found in ${MODEL_PATH}"
+    exit 1
+fi
+
+PIPELINE_SCRIPT="${REPO_ROOT}/scripts/eval_pipeline.sh"
 
 echo "Submitting eval jobs for: ${MODEL_PATH}"
-sbatch scripts/eval_pipeline.sh "$MODEL_PATH" inspired "$FROM_STEP"
-sbatch scripts/eval_pipeline.sh "$MODEL_PATH" redial  "$FROM_STEP"
+sbatch "$PIPELINE_SCRIPT" "$MODEL_PATH" inspired "$FROM_STEP"
+sbatch "$PIPELINE_SCRIPT" "$MODEL_PATH" redial  "$FROM_STEP"
