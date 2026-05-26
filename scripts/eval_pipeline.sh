@@ -170,7 +170,7 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 1/3] Conv2Item — Item Retrieval" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step1_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
@@ -180,6 +180,7 @@ mkdir -p "$LOG_DIR"
             echo ""
             echo "  [STEP 1/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP1_OK=false
+            > "$METRICS_CACHE_CONV2ITEM"
         fi
         rm -f "$STEP_TMP"
     else
@@ -216,11 +217,12 @@ mkdir -p "$LOG_DIR"
     if [ "$STEP2_OK" = false ]; then
         banner "[STEP 3/3] Ranking — Skipped (Conv2Conv failed)"
         STEP3_OK=false
+        > "$METRICS_CACHE_RANKING"
     else
         banner "[STEP 3/3] Ranking — Item Re-ranking" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step3_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
@@ -230,6 +232,7 @@ mkdir -p "$LOG_DIR"
             echo ""
             echo "  [STEP 3/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP3_OK=false
+            > "$METRICS_CACHE_RANKING"
         fi
         rm -f "$STEP_TMP"
     fi
