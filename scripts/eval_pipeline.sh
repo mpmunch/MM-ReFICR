@@ -170,7 +170,7 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 1/3] Conv2Item — Item Retrieval" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step1_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
@@ -222,7 +222,7 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 3/3] Ranking — Item Re-ranking" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step3_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
