@@ -4,10 +4,17 @@
 # using the local Python environment (.venv).
 #
 # Usage:
-#   bash eval_pipeline_local.sh [dataset] [from_step]
+#   bash eval_pipeline_local.sh <model> [dataset] [from_step]
 #
-#   dataset   : inspired (default) or redial
+#   model     : linear_NN | dynamic_NN | concat
+#                 (e.g. linear_02, dynamic_07, concat)
+#   dataset   : inspired (default) | redial
 #   from_step : conv2item (default) | conv2conv | ranking
+#
+# Examples:
+#   bash eval_pipeline_local.sh linear_02
+#   bash eval_pipeline_local.sh dynamic_07 redial
+#   bash eval_pipeline_local.sh concat inspired conv2conv
 
 cd /work/ReFICR
 source .venv/bin/activate
@@ -17,8 +24,20 @@ export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
-DATASET="${1:-inspired}"
-FROM_STEP="${2:-conv2item}"
+MODEL_ARG="${1:-}"
+DATASET="${2:-inspired}"
+FROM_STEP="${3:-conv2item}"
+
+if [[ -z "$MODEL_ARG" ]]; then
+    echo "Usage: bash eval_pipeline_local.sh <model> [dataset] [from_step]"
+    echo "  model : linear_NN | dynamic_NN | concat  (e.g. linear_02, dynamic_07, concat)"
+    exit 1
+fi
+
+if [[ ! "$MODEL_ARG" =~ ^(linear|dynamic)_[0-9]{2}$|^concat$ ]]; then
+    echo "Unknown model: $MODEL_ARG (expected: linear_NN, dynamic_NN, or concat)"
+    exit 1
+fi
 
 if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
     echo "Unknown dataset: $DATASET (expected: inspired or redial)"
@@ -27,6 +46,18 @@ fi
 
 if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP" != "ranking" ]]; then
     echo "Unknown from_step: $FROM_STEP (expected: conv2item, conv2conv, or ranking)"
+    exit 1
+fi
+
+MODEL_PATH="model_weights/ReFICR_qlora_${MODEL_ARG}"
+
+if [[ ! -d "$MODEL_PATH" ]]; then
+    echo "Error: model directory not found: ${MODEL_PATH}"
+    exit 1
+fi
+
+if [[ ! -f "${MODEL_PATH}/adapter_config.json" ]]; then
+    echo "Error: adapter_config.json not found in ${MODEL_PATH}"
     exit 1
 fi
 
@@ -52,7 +83,7 @@ METRICS_CACHE_RANKING="${LOG_DIR}/metrics_${DATASET}_ranking.tmp"
 # Helper: run a step and return its exit code
 # ---------------------------------------------------------------------------
 run_step() {
-    python inference_ReRICR.py --config "$1"
+    python inference_ReRICR.py --config "$1" --target_model_path "$MODEL_PATH"
 }
 
 # ---------------------------------------------------------------------------
@@ -86,7 +117,7 @@ mkdir -p "$LOG_DIR"
         "Dataset    : ${DATASET}" \
         "From step  : ${FROM_STEP}" \
         "Python     : $(which python)" \
-        "Model      : $(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')" \
+        "Model      : ${MODEL_PATH}" \
         "Log        : ${LOG_FILE}" \
         "Started    : $(date)"
 
@@ -125,7 +156,7 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 1/3] Conv2Item — Item Retrieval" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step1_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
@@ -135,6 +166,7 @@ mkdir -p "$LOG_DIR"
             echo ""
             echo "  [STEP 1/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP1_OK=false
+            > "$METRICS_CACHE_CONV2ITEM"
         fi
         rm -f "$STEP_TMP"
     else
@@ -171,11 +203,12 @@ mkdir -p "$LOG_DIR"
     if [ "$STEP2_OK" = false ]; then
         banner "[STEP 3/3] Ranking — Skipped (Conv2Conv failed)"
         STEP3_OK=false
+        > "$METRICS_CACHE_RANKING"
     else
         banner "[STEP 3/3] Ranking — Item Re-ranking" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step3_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
@@ -185,6 +218,7 @@ mkdir -p "$LOG_DIR"
             echo ""
             echo "  [STEP 3/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP3_OK=false
+            > "$METRICS_CACHE_RANKING"
         fi
         rm -f "$STEP_TMP"
     fi
@@ -228,12 +262,27 @@ mkdir -p "$LOG_DIR"
 echo ""
 echo "Full log saved to: $LOG_FILE"
 
+TO_JSON="${MODEL_PATH}/test_processed_gen.jsonl"
+
+{
+    banner "[STEP 4/4] Response Generation" "Started : $(date)" "Output  : ${TO_JSON}"
+    STEP_START=$(date +%s)
+
+    python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --to_json "$TO_JSON" > /dev/null
+    STEP4_STATUS=$?
+    echo ""
+    if [ "$STEP4_STATUS" -eq 0 ]; then
+        echo "  [STEP 4/4] Finished in $(elapsed $STEP_START) — $(date)"
+    else
+        echo "  [STEP 4/4] FAILED after $(elapsed $STEP_START) — $(date)"
+    fi
+} 2>&1 | tee -a "$LOG_FILE"
+
 source .env
 # Log to wandb
 WANDB_PROJECT="MMReFICR Evaluation Pipeline"
 
-MODEL_PATH="$(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')"
-RUN_NAME="eval_${DATASET}_${TIMESTAMP}"
+RUN_NAME="eval_${DATASET}_$(basename "$MODEL_PATH")"
 
 python scripts/log_eval_to_wandb.py \
   --project "$WANDB_PROJECT" \
@@ -243,6 +292,8 @@ python scripts/log_eval_to_wandb.py \
   --model_path "$MODEL_PATH" \
   --conv2item_file "$METRICS_CACHE_CONV2ITEM" \
   --ranking_file "$METRICS_CACHE_RANKING" \
+  --log_file "$LOG_FILE" \
+  --response_gen_file "$TO_JSON" \
   --step1_ok "$STEP1_OK" \
   --step2_ok "$STEP2_OK" \
   --step3_ok "$STEP3_OK"
