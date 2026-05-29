@@ -74,6 +74,7 @@ def main():
     parser.add_argument("--step1_ok", required=True)
     parser.add_argument("--step2_ok", required=True)
     parser.add_argument("--step3_ok", required=True)
+    parser.add_argument("--step4_ok", required=True)
     args = parser.parse_args()
     conv2item = parse_metrics(args.conv2item_file)
     ranking = parse_metrics(args.ranking_file)
@@ -96,10 +97,12 @@ def main():
         "conv2item/status": to_int_bool(args.step1_ok),
         "conv2conv/status": to_int_bool(args.step2_ok),
         "ranking/status": to_int_bool(args.step3_ok),
+        "response_gen/status": to_int_bool(args.step4_ok),
         "pipeline/all_steps_ok": int(
             to_int_bool(args.step1_ok)
             and to_int_bool(args.step2_ok)
             and to_int_bool(args.step3_ok)
+            and to_int_bool(args.step4_ok)
         ),
     }
 
@@ -131,8 +134,10 @@ def main():
         print(f"warning: eval log file not found, skipping wandb upload: {log_path}")
 
     response_gen_file = Path(args.response_gen_file)
-    if response_gen_file.exists():
+    if to_int_bool(args.step4_ok) and response_gen_file.exists():
         wandb.save(str(response_gen_file))
+    elif not to_int_bool(args.step4_ok):
+        print("warning: step 4 did not complete — skipping response gen file upload")
 
     wandb.finish()
 

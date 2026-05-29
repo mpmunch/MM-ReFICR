@@ -275,11 +275,13 @@ TO_JSON="${MODEL_PATH}/test_processed_gen.jsonl"
 
     python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --target_model_path "$MODEL_PATH" --to_json "$TO_JSON" > /dev/null
     STEP4_STATUS=$?
+    STEP4_OK=true
     echo ""
     if [ "$STEP4_STATUS" -eq 0 ]; then
         echo "  [STEP 4/4] Finished in $(elapsed $STEP_START) — $(date)"
     else
         echo "  [STEP 4/4] FAILED after $(elapsed $STEP_START) — $(date)"
+        STEP4_OK=false
     fi
 } 2>&1 | tee -a "$LOG_FILE"
 
@@ -303,4 +305,5 @@ python scripts/log_eval_to_wandb.py \
   --response_gen_file "$TO_JSON" \
   --step1_ok "$STEP1_OK" \
   --step2_ok "$STEP2_OK" \
-  --step3_ok "$STEP3_OK"
+  --step3_ok "$STEP3_OK" \
+  --step4_ok "$STEP4_OK"
