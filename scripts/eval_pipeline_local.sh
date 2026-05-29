@@ -273,7 +273,7 @@ TO_JSON="${MODEL_PATH}/test_processed_gen.jsonl"
     banner "[STEP 4/4] Response Generation" "Started : $(date)" "Output  : ${TO_JSON}"
     STEP_START=$(date +%s)
 
-    python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --to_json "$TO_JSON" > /dev/null
+    python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --target_model_path "$MODEL_PATH" --to_json "$TO_JSON" > /dev/null
     STEP4_STATUS=$?
     echo ""
     if [ "$STEP4_STATUS" -eq 0 ]; then
