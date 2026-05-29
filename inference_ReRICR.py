@@ -233,6 +233,26 @@ def _load_image_concat_projection_from_checkpoint(checkpoint_dir: str) -> Option
     print(f"Loaded concat projection from checkpoint: {checkpoint_dir}")
     return _build_linear_from_state(w.to(torch.float32), b.to(torch.float32) if b is not None else None)
         
+def _vram_gb() -> float:
+    """Return total VRAM of GPU 0 in GB, or 0 if no GPU is available."""
+    if not torch.cuda.is_available():
+        return 0.0
+    return torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+
+
+def _auto_config(vram_gb: float, batch_size_override: Optional[int]) -> dict:
+    """Return inference settings scaled to available VRAM."""
+    if vram_gb >= 80:
+        cfg = {"batch_size": 64, "keep_on_gpu": True, "empty_cache": False}
+    elif vram_gb >= 40:
+        cfg = {"batch_size": 32, "keep_on_gpu": False, "empty_cache": True}
+    else:
+        cfg = {"batch_size": 8, "keep_on_gpu": False, "empty_cache": True}
+    if batch_size_override is not None:
+        cfg["batch_size"] = batch_size_override
+    return cfg
+
+
 #merge the model weights
 def apply_lora(base_model_path, target_model_path):
 
@@ -377,13 +397,21 @@ def LLM2Vec_retrieval(queries,documents,rec_lists):
 
 
 def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, gen_instr:str=None,from_json:str=None, db_json:str=None, embeddings_path:str=None, base_model_path:str="GritLM/GritLM-7B",
-    target_model_path:str=None, to_json:str=None, stored_cand_lst:bool=True, is_lora:bool=True, batch_size:int=8,
+    target_model_path:str=None, to_json:str=None, stored_cand_lst:bool=True, is_lora:bool=True, batch_size:Optional[int]=None,
     use_image_features: bool=False, image_embeddings_path: str=None, image_fusion_weight: float=0.2,
     image_projection_checkpoint: str=None, image_fusion_mode: str="linear"):
 
     set_seed(123)
     image_fusion_mode = validate_image_fusion_mode(image_fusion_mode)
-    
+
+    vram = _vram_gb()
+    cfg = _auto_config(vram, batch_size)
+    batch_size = cfg["batch_size"]
+    keep_on_gpu = cfg["keep_on_gpu"]
+    empty_cache = cfg["empty_cache"]
+    sim_device = "cuda" if keep_on_gpu and torch.cuda.is_available() else "cpu"
+    print(f"GPU VRAM: {vram:.1f} GB | batch_size={batch_size} | keep_on_gpu={keep_on_gpu}")
+
     if is_lora:
         model = apply_lora(base_model_path,target_model_path)
     else:
@@ -469,15 +497,15 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                     with torch.inference_mode():
                         batch_rep = model.encode(batch_docs, instruction=gritlm_instruction(doc_instr))
 
-                    # convert to CPU tensor
                     if isinstance(batch_rep, torch.Tensor):
-                        batch_rep_cpu = batch_rep.detach().cpu()
+                        batch_chunk = batch_rep.detach() if keep_on_gpu else batch_rep.detach().cpu()
                     else:
-                        batch_rep_cpu = torch.from_numpy(batch_rep).cpu()
-
-                    all_chunks.append(batch_rep_cpu)
-
-                    torch.cuda.empty_cache()
+                        batch_chunk = torch.from_numpy(batch_rep)
+                        if not keep_on_gpu:
+                            batch_chunk = batch_chunk.cpu()
+                    all_chunks.append(batch_chunk)
+                    if empty_cache:
+                        torch.cuda.empty_cache()
 
                 d_rep = torch.cat(all_chunks, dim=0)
 
@@ -486,9 +514,11 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                 print("saving embeddigns to file ...") 
 
             if isinstance(d_rep, torch.Tensor):
-                d_rep_t = d_rep.detach().cpu().to(torch.float32)
+                d_rep_t = d_rep.detach().to(torch.float32)
             else:
-                d_rep_t = torch.from_numpy(d_rep).cpu().to(torch.float32)
+                d_rep_t = torch.from_numpy(d_rep).to(torch.float32)
+            if keep_on_gpu and torch.cuda.is_available():
+                d_rep_t = d_rep_t.cuda()
 
             if use_image_features:
                 item_image_emb, item_image_mask = _build_item_image_tensors(
@@ -497,6 +527,10 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                     db_image_found_mask,
                     title_to_db_idx,
                 )
+                if keep_on_gpu and torch.cuda.is_available():
+                    image_projection_layer = image_projection_layer.to(sim_device)
+                    if image_concat_projection_layer is not None:
+                        image_concat_projection_layer = image_concat_projection_layer.to(sim_device)
                 with torch.inference_mode():
                     d_rep_t = F.normalize(d_rep_t, p=2, dim=1)
                     d_rep_t = apply_image_fusion(
@@ -527,48 +561,25 @@ def main(mode:str=None, tag:str=None, query_instr:str=None, doc_instr:str=None, 
                 lst = list(set(lst))
                 rec_lists.append(lst)
 
-            num_slice = 4
-            step = int(len(queries) / num_slice) + 1
-            print('query_step:',step)
-            rank = []
-            score_lst = []
+            q_rep = model.encode(queries, instruction=gritlm_instruction(query_instr), batch_size=batch_size)
+            if isinstance(q_rep, torch.Tensor):
+                q_rep_t = q_rep.detach().cpu().to(torch.float32)
+            else:
+                q_rep_t = torch.from_numpy(q_rep).to(torch.float32)
+            print('queries shape:', q_rep_t.shape)
 
-            for i in range(0,len(queries),step):
-                queries_slice = queries[i : i + step]
-                rec_lists_slice = rec_lists[i : i + step]
+            # Normalized matmul avoids the Q×D×H broadcast of F.cosine_similarity
+            q_norm = F.normalize(q_rep_t, p=2, dim=1).to(sim_device)
+            d_norm = F.normalize(d_rep_t.to(torch.float32), p=2, dim=1).to(sim_device)
+            cos_sim = torch.mm(q_norm, d_norm.t())
+            if sim_device != "cpu":
+                cos_sim = cos_sim.cpu()
+            cos_sim = torch.where(torch.isnan(cos_sim), torch.zeros_like(cos_sim), cos_sim)
+            print("cos_sim shape:", cos_sim.shape)
 
-                assert len(queries_slice) == len(rec_lists_slice)
-                
-                q_rep = model.encode(queries_slice, instruction=gritlm_instruction(query_instr), batch_size=batch_size)
-
-                # convert embeddings to CPU tensors
-                if isinstance(q_rep, torch.Tensor):
-                    q_rep_t = q_rep.detach().cpu()
-                else:
-                    q_rep_t = torch.from_numpy(q_rep).cpu()
-
-                print('queries shape:', q_rep_t.shape) 
-
-                cos_sim = F.cosine_similarity(
-                    q_rep_t.unsqueeze(1),
-                    d_rep_t.unsqueeze(0),
-                    dim=-1
-                )
-                cos_sim = torch.where(
-                    torch.isnan(cos_sim),
-                    torch.full_like(cos_sim,0),
-                    cos_sim
-                )
-                print("cos_sim shape:",cos_sim.shape)
-                print("cos_sim:",cos_sim)
-
-                topk_sim_values,topk_sim_indices = torch.topk(cos_sim,k=50,dim=-1)
-                rank_slice = topk_sim_indices.tolist()
-                rank += rank_slice
-                print('length rank:',len(rank))
-
-
-            print('length rank:',len(rank))
+            topk_sim_values, topk_sim_indices = torch.topk(cos_sim, k=50, dim=-1)
+            rank = topk_sim_indices.tolist()
+            print('length rank:', len(rank))
             print(recall_score(rec_lists,rank,ks=[1,5,10,20,50]))
             print(ndcg_score(rec_lists, rank, ks=[1,5,10,20,50]))
             print(mrr_score(rec_lists, rank, ks=[1,5,10,20,50]))
