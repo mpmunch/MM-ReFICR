@@ -280,7 +280,7 @@ TO_JSON="${MODEL_PATH}/test_processed_gen.jsonl"
 
 source .env
 # Log to wandb
-WANDB_PROJECT="MMReFICR Evaluation Pipeline"
+WANDB_PROJECT="UCloud Evaluation Pipeline"
 
 RUN_NAME="eval_${DATASET}_$(basename "$MODEL_PATH")_ucloud"
 

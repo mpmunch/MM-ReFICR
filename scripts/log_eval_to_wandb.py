@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import csv
+import os
 import re
 import wandb
+from datetime import datetime
 from pathlib import Path
 
 RECALL_RE = re.compile(r"Recall@(\d+)\s*[:=]\s*([0-9]*\.?[0-9]+)")
@@ -27,6 +30,23 @@ def parse_metrics(path: str):
 
 def to_int_bool(x: str) -> int:
     return 1 if str(x).lower() in {"1", "true", "yes", "ok"} else 0
+
+def append_csv_row(csv_path: str, run_name: str, args, payload: dict):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row = {
+        "timestamp": timestamp,
+        "run_name": run_name,
+        "dataset": args.dataset,
+        "model": args.model_path,
+        "from_step": args.from_step,
+        **{k: v for k, v in sorted(payload.items())},
+    }
+    write_header = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -86,7 +106,23 @@ def main():
     for k, v in payload.items():
         run.summary[k] = v
 
+    # CSV — one row per run, appended to logs/eval_results.csv
     log_path = Path(args.log_file)
+    csv_path = str(log_path.parent / "eval_results.csv")
+    append_csv_row(csv_path, args.run_name, args, payload)
+    print(f"Metrics appended to: {csv_path}")
+
+    # Wandb Table — all rows from the CSV so the full history is visible in the UI
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        if rows:
+            columns = list(rows[0].keys())
+            table = wandb.Table(columns=columns)
+            for r in rows:
+                table.add_data(*[r.get(c, "") for c in columns])
+            wandb.log({"eval_results": table})
     if log_path.exists():
         wandb.save(str(log_path))
     else:
