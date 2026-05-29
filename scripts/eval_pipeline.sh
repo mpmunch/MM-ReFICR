@@ -15,7 +15,7 @@
 #   bash eval_pipeline.sh [target_model_path] [dataset] [from_step]
 #   target_model_path : path to the model to evaluate
 #   dataset           : inspired (default) or redial
-#   from_step         : conv2item (default) | conv2conv | ranking
+#   from_step         : conv2item (default) | conv2conv | ranking | response_gen
 #               When resuming from a later step, stale files from earlier
 #               steps are preserved so they can be reused.
 #
@@ -24,6 +24,7 @@
 #   bash eval_pipeline.sh model_weights/ReFICR_qlora redial conv2item
 #   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired conv2conv
 #   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired ranking
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired response_gen
 
 if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
     cd "$SLURM_SUBMIT_DIR" || exit 1
@@ -44,8 +45,8 @@ if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
     exit 1
 fi
 
-if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP" != "ranking" ]]; then
-    echo "Unknown from_step: $FROM_STEP (expected: conv2item, conv2conv, or ranking)"
+if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP" != "ranking" && "$FROM_STEP" != "response_gen" ]]; then
+    echo "Unknown from_step: $FROM_STEP (expected: conv2item, conv2conv, ranking, or response_gen)"
     exit 1
 fi
 
@@ -151,6 +152,10 @@ mkdir -p "$LOG_DIR"
             STALE=()
             echo "  Resuming from Ranking — no files removed."
             ;;
+        response_gen)
+            STALE=()
+            echo "  Resuming from Response Generation — no files removed."
+            ;;
     esac
 
     for f in "${STALE[@]}"; do
@@ -191,7 +196,7 @@ mkdir -p "$LOG_DIR"
     # Step 2: Conv2Conv
     # -----------------------------------------------------------------------
     STEP2_OK=true
-    if [[ "$FROM_STEP" == "ranking" ]]; then
+    if [[ "$FROM_STEP" == "ranking" || "$FROM_STEP" == "response_gen" ]]; then
         banner "[STEP 2/3] Conv2Conv — Skipped (resuming from ${FROM_STEP})"
     elif [ "$STEP1_OK" = false ]; then
         banner "[STEP 2/3] Conv2Conv — Skipped (Conv2Item failed)"
@@ -214,7 +219,9 @@ mkdir -p "$LOG_DIR"
     # Step 3: Ranking
     # -----------------------------------------------------------------------
     STEP3_OK=true
-    if [ "$STEP2_OK" = false ]; then
+    if [[ "$FROM_STEP" == "response_gen" ]]; then
+        banner "[STEP 3/3] Ranking — Skipped (resuming from ${FROM_STEP})"
+    elif [ "$STEP2_OK" = false ]; then
         banner "[STEP 3/3] Ranking — Skipped (Conv2Conv failed)"
         STEP3_OK=false
         > "$METRICS_CACHE_RANKING"

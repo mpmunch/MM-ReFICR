@@ -9,12 +9,13 @@
 #   model     : linear_NN | dynamic_NN | concat
 #                 (e.g. linear_02, dynamic_07, concat)
 #   dataset   : inspired (default) | redial
-#   from_step : conv2item (default) | conv2conv | ranking
+#   from_step : conv2item (default) | conv2conv | ranking | response_gen
 #
 # Examples:
 #   bash eval_pipeline_local.sh linear_02
 #   bash eval_pipeline_local.sh dynamic_07 redial
 #   bash eval_pipeline_local.sh concat inspired conv2conv
+#   bash eval_pipeline_local.sh linear_02 inspired response_gen
 
 cd /work/ReFICR || { echo "Error: cannot cd to /work/ReFICR"; exit 1; }
 source .venv/bin/activate
@@ -44,8 +45,8 @@ if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
     exit 1
 fi
 
-if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP" != "ranking" ]]; then
-    echo "Unknown from_step: $FROM_STEP (expected: conv2item, conv2conv, or ranking)"
+if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP" != "ranking" && "$FROM_STEP" != "response_gen" ]]; then
+    echo "Unknown from_step: $FROM_STEP (expected: conv2item, conv2conv, ranking, or response_gen)"
     exit 1
 fi
 
@@ -138,6 +139,10 @@ _STATUS_FILE="${LOG_DIR}/pipeline_status_${DATASET}_${TIMESTAMP}.tmp"
             STALE=()
             echo "  Resuming from Ranking — no files removed."
             ;;
+        response_gen)
+            STALE=()
+            echo "  Resuming from Response Generation — no files removed."
+            ;;
     esac
 
     for f in "${STALE[@]}"; do
@@ -178,7 +183,7 @@ _STATUS_FILE="${LOG_DIR}/pipeline_status_${DATASET}_${TIMESTAMP}.tmp"
     # Step 2: Conv2Conv
     # -----------------------------------------------------------------------
     STEP2_OK=true
-    if [[ "$FROM_STEP" == "ranking" ]]; then
+    if [[ "$FROM_STEP" == "ranking" || "$FROM_STEP" == "response_gen" ]]; then
         banner "[STEP 2/3] Conv2Conv — Skipped (resuming from ${FROM_STEP})"
     elif [ "$STEP1_OK" = false ]; then
         banner "[STEP 2/3] Conv2Conv — Skipped (Conv2Item failed)"
@@ -201,7 +206,9 @@ _STATUS_FILE="${LOG_DIR}/pipeline_status_${DATASET}_${TIMESTAMP}.tmp"
     # Step 3: Ranking
     # -----------------------------------------------------------------------
     STEP3_OK=true
-    if [ "$STEP2_OK" = false ]; then
+    if [[ "$FROM_STEP" == "response_gen" ]]; then
+        banner "[STEP 3/3] Ranking — Skipped (resuming from ${FROM_STEP})"
+    elif [ "$STEP2_OK" = false ]; then
         banner "[STEP 3/3] Ranking — Skipped (Conv2Conv failed)"
         STEP3_OK=false
         > "$METRICS_CACHE_RANKING"
