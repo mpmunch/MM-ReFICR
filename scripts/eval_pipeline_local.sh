@@ -282,7 +282,7 @@ source .env
 # Log to wandb
 WANDB_PROJECT="MMReFICR Evaluation Pipeline"
 
-RUN_NAME="eval_${DATASET}_$(basename "$MODEL_PATH")"
+RUN_NAME="eval_${DATASET}_$(basename "$MODEL_PATH")_ucloud"
 
 python scripts/log_eval_to_wandb.py \
   --project "$WANDB_PROJECT" \
