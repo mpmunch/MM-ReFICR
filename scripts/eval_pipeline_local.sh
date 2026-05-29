@@ -16,7 +16,7 @@
 #   bash eval_pipeline_local.sh dynamic_07 redial
 #   bash eval_pipeline_local.sh concat inspired conv2conv
 
-cd /work/ReFICR
+cd /work/ReFICR || { echo "Error: cannot cd to /work/ReFICR"; exit 1; }
 source .venv/bin/activate
 export HF_HOME=./.cache/huggingface
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
@@ -108,6 +108,7 @@ elapsed() {
 # Main pipeline (everything below is tee'd to the log file)
 # ---------------------------------------------------------------------------
 mkdir -p "$LOG_DIR"
+_STATUS_FILE="${LOG_DIR}/pipeline_status_${DATASET}_${TIMESTAMP}.tmp"
 
 {
     PIPELINE_START=$(date +%s)
@@ -257,7 +258,11 @@ mkdir -p "$LOG_DIR"
     printf "    Ranking   : %s\n" "$( [ "$STEP3_OK" = true ] && echo OK || echo FAILED )"
     echo ""
 
+    declare -p STEP1_OK STEP2_OK STEP3_OK > "$_STATUS_FILE"
+
 } 2>&1 | tee "$LOG_FILE"
+source "$_STATUS_FILE"
+rm -f "$_STATUS_FILE"
 
 echo ""
 echo "Full log saved to: $LOG_FILE"
@@ -278,11 +283,13 @@ TO_JSON="${MODEL_PATH}/test_processed_gen.jsonl"
     fi
 } 2>&1 | tee -a "$LOG_FILE"
 
-source .env
+[[ -f .env ]] && source .env
+[[ -n "${WANDB_API_KEY:-}" ]] || { echo "Error: WANDB_API_KEY not set — create .env with it"; exit 1; }
+
 # Log to wandb
 WANDB_PROJECT="UCloud Evaluation Pipeline"
 
-RUN_NAME="eval_${DATASET}_$(basename "$MODEL_PATH")_ucloud"
+RUN_NAME="eval_${DATASET}_$(basename "$MODEL_PATH")_ucloud_${TIMESTAMP}"
 
 python scripts/log_eval_to_wandb.py \
   --project "$WANDB_PROJECT" \

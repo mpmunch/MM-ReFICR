@@ -31,7 +31,7 @@ def parse_metrics(path: str):
 def to_int_bool(x: str) -> int:
     return 1 if str(x).lower() in {"1", "true", "yes", "ok"} else 0
 
-def append_csv_row(csv_path: str, run_name: str, args, payload: dict):
+def append_csv_row(csv_path: str, run_name: str, args, payload: dict) -> dict:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     row = {
         "timestamp": timestamp,
@@ -41,12 +41,20 @@ def append_csv_row(csv_path: str, run_name: str, args, payload: dict):
         "from_step": args.from_step,
         **{k: v for k, v in sorted(payload.items())},
     }
-    write_header = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
+    existing_cols: list = []
+    if os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            existing_cols = next(csv.reader(f), [])
+    all_cols = list(existing_cols) or list(row.keys())
+    for k in row:
+        if k not in all_cols:
+            all_cols.append(k)
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
-        if write_header:
+        writer = csv.DictWriter(f, fieldnames=all_cols, extrasaction="ignore")
+        if not existing_cols:
             writer.writeheader()
         writer.writerow(row)
+    return row
 
 def main():
     parser = argparse.ArgumentParser()
@@ -109,20 +117,14 @@ def main():
     # CSV — one row per run, appended to logs/eval_results.csv
     log_path = Path(args.log_file)
     csv_path = str(log_path.parent / "eval_results.csv")
-    append_csv_row(csv_path, args.run_name, args, payload)
+    row = append_csv_row(csv_path, args.run_name, args, payload)
     print(f"Metrics appended to: {csv_path}")
 
-    # Wandb Table — all rows from the CSV so the full history is visible in the UI
-    if os.path.exists(csv_path):
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-        if rows:
-            columns = list(rows[0].keys())
-            table = wandb.Table(columns=columns)
-            for r in rows:
-                table.add_data(*[r.get(c, "") for c in columns])
-            wandb.log({"eval_results": table})
+    # Wandb Table — single row for this run (avoids O(N²) storage across runs)
+    table = wandb.Table(columns=list(row.keys()))
+    table.add_data(*row.values())
+    wandb.log({"eval_results": table})
+
     if log_path.exists():
         wandb.save(str(log_path))
     else:
