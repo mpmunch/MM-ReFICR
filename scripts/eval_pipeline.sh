@@ -12,18 +12,18 @@
 # Saves all output and a metric summary to a timestamped log file.
 #
 # Usage:
-#   bash eval_pipeline.sh [dataset] [from_step]
-#
-#   dataset   : inspired (default) or redial
-#   from_step : conv2item (default) | conv2conv | ranking
+#   bash eval_pipeline.sh [target_model_path] [dataset] [from_step]
+#   target_model_path : path to the model to evaluate
+#   dataset           : inspired (default) or redial
+#   from_step         : conv2item (default) | conv2conv | ranking
 #               When resuming from a later step, stale files from earlier
 #               steps are preserved so they can be reused.
 #
 # Examples:
-#   bash eval_pipeline.sh                        # full run on inspired
-#   bash eval_pipeline.sh redial                 # full run on redial
-#   bash eval_pipeline.sh inspired conv2conv     # resume from Conv2Conv
-#   bash eval_pipeline.sh inspired ranking       # resume from Ranking
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired conv2item
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora redial conv2item
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired conv2conv
+#   bash eval_pipeline.sh model_weights/ReFICR_qlora inspired ranking
 
 if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
     cd "$SLURM_SUBMIT_DIR" || exit 1
@@ -35,8 +35,9 @@ fi
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
-DATASET="${1:-inspired}"
-FROM_STEP="${2:-conv2item}"
+TARGET_MODEL_PATH="${1:-}"
+DATASET="${2:-inspired}"
+FROM_STEP="${3:-conv2item}"
 
 if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
     echo "Unknown dataset: $DATASET (expected: inspired or redial)"
@@ -48,6 +49,12 @@ if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP"
     exit 1
 fi
 
+if [[ -z "$TARGET_MODEL_PATH" ]]; then
+    echo "ERROR: TARGET_MODEL_PATH not specified!"
+    echo "Usage: bash eval_pipeline.sh [target_model_path] [dataset] [from_step]"
+    echo "  Example: bash eval_pipeline.sh /path/to/model inspired conv2item"
+    exit 1
+fi
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -88,7 +95,7 @@ run_step() {
     local config="$1"
     singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
         /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
-        python inference_ReRICR.py --config "$config"
+        python inference_ReRICR.py --config "$config" --target_model_path "$TARGET_MODEL_PATH"
 }
 
 # ---------------------------------------------------------------------------
@@ -121,7 +128,7 @@ mkdir -p "$LOG_DIR"
         "ReFICR Evaluation Pipeline" \
         "Dataset    : ${DATASET}" \
         "From step  : ${FROM_STEP}" \
-        "Model      : $(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')" \
+        "Model      : ${TARGET_MODEL_PATH}" \
         "Container  : ${CONTAINER}" \
         "Log        : ${LOG_FILE}" \
         "Started    : $(date)"
@@ -163,7 +170,7 @@ mkdir -p "$LOG_DIR"
         banner "[STEP 1/3] Conv2Item — Item Retrieval" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step1_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step1_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Conv2Item/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_CONV2ITEM" 2>/dev/null || true
@@ -173,6 +180,7 @@ mkdir -p "$LOG_DIR"
             echo ""
             echo "  [STEP 1/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP1_OK=false
+            > "$METRICS_CACHE_CONV2ITEM"
         fi
         rm -f "$STEP_TMP"
     else
@@ -209,11 +217,12 @@ mkdir -p "$LOG_DIR"
     if [ "$STEP2_OK" = false ]; then
         banner "[STEP 3/3] Ranking — Skipped (Conv2Conv failed)"
         STEP3_OK=false
+        > "$METRICS_CACHE_RANKING"
     else
         banner "[STEP 3/3] Ranking — Item Re-ranking" "Started : $(date)"
         STEP_START=$(date +%s)
 
-        STEP_TMP="${LOG_DIR}/step3_${TIMESTAMP}.tmp"
+        STEP_TMP="${LOG_DIR}/step3_${DATASET}_${TIMESTAMP}.tmp"
         run_step "config/Ranking/${DATASET}_config.yaml" 2>&1 | tee "$STEP_TMP"
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
             grep -E "Recall@|NDCG@|MRR@" "$STEP_TMP" > "$METRICS_CACHE_RANKING" 2>/dev/null || true
@@ -223,6 +232,7 @@ mkdir -p "$LOG_DIR"
             echo ""
             echo "  [STEP 3/3] FAILED after $(elapsed $STEP_START) — $(date)"
             STEP3_OK=false
+            > "$METRICS_CACHE_RANKING"
         fi
         rm -f "$STEP_TMP"
     fi
@@ -263,6 +273,24 @@ mkdir -p "$LOG_DIR"
 
 } 2>&1 | tee "$LOG_FILE"
 
+TO_JSON="$TARGET_MODEL_PATH/test_processed_gen.jsonl"
+{
+    banner "[STEP 4/4] Response Generation" "Started : $(date)" "Output  : ${TO_JSON}"
+    STEP_START=$(date +%s)
+
+    singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
+        /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
+        python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --target_model_path "$TARGET_MODEL_PATH" --to_json "$TO_JSON"
+
+    RESPONSE_GEN_STATUS=${PIPESTATUS[0]}
+    echo ""
+    if [ "$RESPONSE_GEN_STATUS" -eq 0 ]; then
+        echo "  [STEP 4/4] Finished in $(elapsed $STEP_START) — $(date)"
+    else
+        echo "  [STEP 4/4] FAILED after $(elapsed $STEP_START) — $(date)"
+    fi
+} 2>&1 | tee -a "$LOG_FILE"
+
 echo ""
 echo "Full log saved to: $LOG_FILE"
 
@@ -270,8 +298,8 @@ echo "Full log saved to: $LOG_FILE"
   # Log to wandb 
   WANDB_PROJECT="MMReFICR Evaluation Pipeline"
 
-  MODEL_PATH="$(grep target_model_path config/Conv2Item/${DATASET}_config.yaml | awk '{print $2}')"
-  RUN_NAME="eval_${DATASET}_${TIMESTAMP}"
+  MODEL_PATH="${TARGET_MODEL_PATH}"
+  RUN_NAME="eval_${DATASET}_$(basename "$TARGET_MODEL_PATH")"
 
   singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
     /bin/bash -lc "source /scratch/my_venv/bin/activate && python scripts/log_eval_to_wandb.py \
@@ -282,6 +310,8 @@ echo "Full log saved to: $LOG_FILE"
       --model_path \"$MODEL_PATH\" \
       --conv2item_file \"$METRICS_CACHE_CONV2ITEM\" \
       --ranking_file \"$METRICS_CACHE_RANKING\" \
+      --log_file \"$LOG_FILE\" \
+      --response_gen_file \"$TO_JSON\" \
       --step1_ok \"$STEP1_OK\" \
       --step2_ok \"$STEP2_OK\" \
       --step3_ok \"$STEP3_OK\""

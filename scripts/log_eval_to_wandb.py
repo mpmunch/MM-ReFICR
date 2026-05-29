@@ -40,6 +40,8 @@ def main():
 
     parser.add_argument("--conv2item_file", required=True)
     parser.add_argument("--ranking_file", required=True)
+    parser.add_argument("--log_file", required=True)
+    parser.add_argument("--response_gen_file", required=True)  
 
     parser.add_argument("--step1_ok", required=True)
     parser.add_argument("--step2_ok", required=True)
@@ -84,9 +86,15 @@ def main():
     for k, v in payload.items():
         run.summary[k] = v
 
-    log_path = Path("logs") / f"{args.run_name}.log"
+    log_path = Path(args.log_file)
     if log_path.exists():
         wandb.save(str(log_path))
+    else:
+        print(f"warning: eval log file not found, skipping wandb upload: {log_path}")
+
+    response_gen_file = Path(args.response_gen_file)
+    if response_gen_file.exists():
+        wandb.save(str(response_gen_file))
 
     wandb.finish()
 
