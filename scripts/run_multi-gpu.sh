@@ -20,7 +20,7 @@ if [[ "${IMAGE_FUSION_MODE}" != "linear" && "${IMAGE_FUSION_MODE}" != "concat" &
 fi
 
 EXTRA_FUSION_ARGS=()
-if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+if [[ "${IMAGE_FUSION_MODE}" == "linear" || "${IMAGE_FUSION_MODE}" == "dynamic" ]]; then
   EXTRA_FUSION_ARGS+=(--image_fusion_weight "${IMAGE_FUSION_WEIGHT}")
   export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}"
 elif [[ "${IMAGE_FUSION_MODE}" == "dynamic" ]]; then
@@ -30,7 +30,7 @@ else
 fi
 
 OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}"
-if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+if [[ "${IMAGE_FUSION_MODE}" == "linear" || "${IMAGE_FUSION_MODE}" == "dynamic" ]]; then
   OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}_${IMAGE_FUSION_WEIGHT}"
 fi
 
