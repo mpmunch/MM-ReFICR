@@ -42,12 +42,12 @@ FROM_STEP="${3:-conv2item}"
 # Auto alpha logging: enable when model name contains "_dynamic"
 MODEL_BASENAME="$(basename "$TARGET_MODEL_PATH")"
 AUTO_ALPHA=false
-EXTRA_ARGS=""
+EXTRA_ARGS=()
 if [[ "${MODEL_BASENAME}" == *"_dynamic"* ]]; then
     AUTO_ALPHA=true
     ALPHA_LOG="${LOG_DIR:-logs}/dynamic/analysis/dynamic_alpha_${DATASET}.jsonl"
     mkdir -p "$(dirname "$ALPHA_LOG")"
-    EXTRA_ARGS="--image_fusion_mode dynamic --alpha_log_path ${ALPHA_LOG}"
+    EXTRA_ARGS+=(--image_fusion_mode dynamic --alpha_log_path "$ALPHA_LOG")
     echo "Auto alpha logging enabled; alpha log: ${ALPHA_LOG}"
 fi
 
@@ -107,7 +107,7 @@ run_step() {
     local config="$1"
     singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
         /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
-        python inference_ReRICR.py --config "$config" --target_model_path "$TARGET_MODEL_PATH" ${EXTRA_ARGS}
+        python inference_ReRICR.py --config "$config" --target_model_path "$TARGET_MODEL_PATH" "${EXTRA_ARGS[@]}"
 }
 
 # ---------------------------------------------------------------------------
