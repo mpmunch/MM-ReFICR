@@ -274,7 +274,8 @@ rm -f "$_STATUS_FILE"
 echo ""
 echo "Full log saved to: $LOG_FILE"
 
-TO_JSON="${MODEL_PATH}/test_processed_gen.jsonl"
+TO_JSON="${MODEL_PATH}/test_processed_gen_${DATASET}.jsonl"
+_STEP4_STATUS_FILE="${LOG_DIR}/step4_status_${DATASET}_${TIMESTAMP}.tmp"
 
 {
     banner "[STEP 4/4] Response Generation" "Started : $(date)" "Output  : ${TO_JSON}"
@@ -290,7 +291,10 @@ TO_JSON="${MODEL_PATH}/test_processed_gen.jsonl"
         echo "  [STEP 4/4] FAILED after $(elapsed $STEP_START) — $(date)"
         STEP4_OK=false
     fi
+    declare -p STEP4_OK > "$_STEP4_STATUS_FILE"
 } 2>&1 | tee -a "$LOG_FILE"
+source "$_STEP4_STATUS_FILE"
+rm -f "$_STEP4_STATUS_FILE"
 
 [[ -f .env ]] && source .env
 [[ -n "${WANDB_API_KEY:-}" ]] || { echo "Error: WANDB_API_KEY not set — create .env with it"; exit 1; }
