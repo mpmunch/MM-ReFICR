@@ -93,6 +93,12 @@ for MODEL in "${MODELS[@]}"; do
         TO_JSON="${OUT_DIR}/test_processed_gen.jsonl"
 
         echo ""
+        if [[ -f "$TO_JSON" ]]; then
+            echo "  [SKIP] ${MODEL} / ${DATASET} — output already exists: ${TO_JSON}"
+            (( PASS++ ))
+            continue
+        fi
+
         echo "  [RUN] ${MODEL} / ${DATASET} → ${TO_JSON}"
         STEP_START=$(date +%s)
 
