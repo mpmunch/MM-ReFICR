@@ -50,6 +50,15 @@ if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP"
     exit 1
 fi
 
+# Auto alpha logging: enable when model name contains "_dynamic"
+EXTRA_ARGS=()
+if [[ "${MODEL_ARG}" == *"dynamic"* ]]; then
+    ALPHA_LOG="${LOG_DIR:-logs}/dynamic/analysis/dynamic_alpha_${DATASET}.jsonl"
+    mkdir -p "$(dirname "$ALPHA_LOG")"
+    EXTRA_ARGS+=(--image_fusion_mode dynamic --alpha_log_path "$ALPHA_LOG")
+    echo "Auto alpha logging enabled; alpha log: ${ALPHA_LOG}"
+fi
+
 MODEL_PATH="model_weights/ReFICR_qlora_${MODEL_ARG}"
 
 if [[ ! -d "$MODEL_PATH" ]]; then
@@ -84,7 +93,7 @@ METRICS_CACHE_RANKING="${LOG_DIR}/metrics_${DATASET}_ranking.tmp"
 # Helper: run a step and return its exit code
 # ---------------------------------------------------------------------------
 run_step() {
-    python inference_ReRICR.py --config "$1" --target_model_path "$MODEL_PATH"
+    python inference_ReRICR.py --config "$1" --target_model_path "$MODEL_PATH" "${EXTRA_ARGS[@]}"
 }
 
 # ---------------------------------------------------------------------------
@@ -281,7 +290,7 @@ _STEP4_STATUS_FILE="${LOG_DIR}/step4_status_${DATASET}_${TIMESTAMP}.tmp"
     banner "[STEP 4/4] Response Generation" "Started : $(date)" "Output  : ${TO_JSON}"
     STEP_START=$(date +%s)
 
-    python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --target_model_path "$MODEL_PATH" --to_json "$TO_JSON" > /dev/null
+    python inference_ReRICR.py --config "config/Response_Gen/${DATASET}_config.yaml" --target_model_path "$MODEL_PATH" --to_json "$TO_JSON" "${EXTRA_ARGS[@]}" > /dev/null
     STEP4_STATUS=$?
     STEP4_OK=true
     echo ""
