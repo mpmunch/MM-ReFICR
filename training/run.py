@@ -532,8 +532,8 @@ def main():
     logger.info("Starting training")
     
     
-    trainer.train(resume_from_checkpoint=True)
-    #trainer.train()
+    #trainer.train(resume_from_checkpoint=True)
+    trainer.train()
     
     # The below does not save if state dict type is `SHARDED_STATE_DICT`
     #trainer.save_model()
