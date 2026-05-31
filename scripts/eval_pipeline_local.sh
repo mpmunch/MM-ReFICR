@@ -50,15 +50,6 @@ if [[ "$FROM_STEP" != "conv2item" && "$FROM_STEP" != "conv2conv" && "$FROM_STEP"
     exit 1
 fi
 
-# Auto alpha logging: enable when model name contains "_dynamic"
-EXTRA_ARGS=()
-if [[ "${MODEL_ARG}" == *"dynamic"* ]]; then
-    ALPHA_LOG="${LOG_DIR:-logs}/dynamic/analysis/dynamic_alpha_${DATASET}.jsonl"
-    mkdir -p "$(dirname "$ALPHA_LOG")"
-    EXTRA_ARGS+=(--image_fusion_mode dynamic --alpha_log_path "$ALPHA_LOG")
-    echo "Auto alpha logging enabled; alpha log: ${ALPHA_LOG}"
-fi
-
 MODEL_PATH="model_weights/ReFICR_qlora_${MODEL_ARG}"
 
 if [[ ! -d "$MODEL_PATH" ]]; then
@@ -83,6 +74,15 @@ ITEM_EMB="${DATA_DIR}/${DATASET}_item_embeddings.pt"
 CONV_EMB="${DATA_DIR}/${DATASET}_conv_embeddings.pt"
 CAND_JSON="${DATA_DIR}/test_processed_cand.jsonl"
 CAND_RAG_JSON="${DATA_DIR}/test_processed_cand_rag.jsonl"
+
+# Auto alpha logging: enable when model name contains "dynamic"
+EXTRA_ARGS=()
+if [[ "${MODEL_ARG}" == *"dynamic"* ]]; then
+    ALPHA_LOG="${LOG_DIR}/dynamic/analysis/dynamic_alpha_${DATASET}.jsonl"
+    mkdir -p "$(dirname "$ALPHA_LOG")"
+    EXTRA_ARGS+=(--image_fusion_mode dynamic --alpha_log_path "$ALPHA_LOG")
+    echo "Auto alpha logging enabled; alpha log: ${ALPHA_LOG}"
+fi
 
 # Persistent metric caches — survive between partial runs so the summary
 # can display earlier-step metrics even when those steps are skipped.

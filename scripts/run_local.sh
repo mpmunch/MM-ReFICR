@@ -42,7 +42,7 @@ fi
 
 # ------------------------------------------------
 LOG_DIR="logs/${IMAGE_FUSION_MODE}"
-if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+if [[ "${IMAGE_FUSION_MODE}" == "linear" || "${IMAGE_FUSION_MODE}" == "dynamic" ]]; then
   TAG="${IMAGE_FUSION_WEIGHT#0.}"
   [[ "${TAG}" == "${IMAGE_FUSION_WEIGHT}" ]] && TAG="${IMAGE_FUSION_WEIGHT//./}"
   [[ ${#TAG} -eq 1 ]] && TAG="0${TAG}"
