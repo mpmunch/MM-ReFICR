@@ -16,7 +16,7 @@ mkdir -p logs
 MODE="${1:-linear}"
 WEIGHT="${2:-0.0}"
 LOG_DIR="logs/${MODE}"
-if [[ "${MODE}" == "linear" ]]; then
+if [[ "${MODE}" == "linear" || "${MODE}" == "dynamic" ]]; then
      TAG="${WEIGHT#0.}"
      [[ "${TAG}" == "${WEIGHT}" ]] && TAG="${WEIGHT//./}"
      [[ ${#TAG} -eq 1 ]] && TAG="0${TAG}"
