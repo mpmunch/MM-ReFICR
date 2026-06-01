@@ -78,7 +78,8 @@ CAND_RAG_JSON="${DATA_DIR}/test_processed_cand_rag.jsonl"
 # Auto alpha logging: enable when model name contains "dynamic"
 EXTRA_ARGS=()
 if [[ "${MODEL_ARG}" == *"dynamic"* ]]; then
-    ALPHA_LOG="${LOG_DIR}/dynamic/analysis/dynamic_alpha_${DATASET}.jsonl"
+    ALPHA_WEIGHT="${MODEL_ARG#dynamic_}"
+    ALPHA_LOG="${LOG_DIR}/dynamic/${ALPHA_WEIGHT}/${DATASET}_${MODEL_ARG}.jsonl"
     mkdir -p "$(dirname "$ALPHA_LOG")"
     EXTRA_ARGS+=(--image_fusion_mode dynamic --alpha_log_path "$ALPHA_LOG")
     echo "Auto alpha logging enabled; alpha log: ${ALPHA_LOG}"

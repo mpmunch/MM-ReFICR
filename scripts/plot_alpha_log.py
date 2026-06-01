@@ -14,7 +14,6 @@ It writes two PNGs:
 
 import argparse
 import json
-import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -104,47 +103,15 @@ def _spearman_corr(x: np.ndarray, y: np.ndarray) -> float:
     return _pearson_corr(rx, ry)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Plot alpha/agreement logs (.jsonl) into PNG histogram and scatter plots."
-    )
-    parser.add_argument(
-        "--input",
-        required=True,
-        help="Path to alpha log JSONL produced by alpha_log_path (must contain alpha + agreement).",
-    )
-    parser.add_argument(
-        "--out_dir",
-        default=None,
-        help="Output directory for PNGs (defaults to the input file's directory).",
-    )
-    parser.add_argument("--bins", type=int, default=20, help="Number of bins for alpha histogram.")
-    parser.add_argument(
-        "--max_points",
-        type=int,
-        default=20000,
-        help="Max points to plot in scatter (downsamples deterministically if larger).",
-    )
-    args = parser.parse_args()
-
-    input_path = Path(args.input)
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file not found: {input_path}")
-
-    out_dir = Path(args.out_dir) if args.out_dir else input_path.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    alpha, agreement, _rows = _read_alpha_jsonl(str(input_path))
+def _plot_one(input_path: Path, out_dir: Path, bins: int, max_points: int, plt) -> None:
+    alpha, agreement, _ = _read_alpha_jsonl(str(input_path))
     n = int(alpha.size)
 
-    # Correlations computed over the full dataset.
     pearson = _pearson_corr(alpha, agreement)
     spearman = _spearman_corr(alpha, agreement)
 
-    # Scatter plots can get huge. To keep the PNG readable (and fast),
-    # downsample deterministically if there are too many points.
-    if args.max_points is not None and n > int(args.max_points):
-        step = max(n // int(args.max_points), 1)
+    if n > max_points:
+        step = max(n // max_points, 1)
         idx = np.arange(0, n, step, dtype=np.int64)
         alpha_sc = alpha[idx]
         agreement_sc = agreement[idx]
@@ -156,21 +123,8 @@ def main() -> None:
     hist_path = out_dir / f"{stem}_alpha_hist.png"
     scatter_path = out_dir / f"{stem}_alpha_vs_agreement.png"
 
-    try:
-        import matplotlib
-
-        # Ensure this works on headless compute nodes.
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception as e:  # pragma: no cover
-        raise RuntimeError(
-            "matplotlib is required to save PNG plots. Install it (e.g. pip install matplotlib) "
-            f"and re-run. Original import error: {e}"
-        ) from e
-
-    # Histogram
     plt.figure(figsize=(7, 5))
-    plt.hist(alpha, bins=int(args.bins), color="tab:blue", edgecolor="black", alpha=0.85)
+    plt.hist(alpha, bins=bins, color="tab:blue", edgecolor="black", alpha=0.85)
     plt.title(f"Alpha histogram (n={n})")
     plt.xlabel("alpha")
     plt.ylabel("count")
@@ -178,7 +132,6 @@ def main() -> None:
     plt.savefig(hist_path, dpi=200)
     plt.close()
 
-    # Scatter
     plt.figure(figsize=(7, 5))
     plt.scatter(agreement_sc, alpha_sc, s=6, alpha=0.25)
     plt.title(f"Alpha vs agreement | Pearson={pearson:.4f} | Spearman={spearman:.4f}")
@@ -189,10 +142,63 @@ def main() -> None:
     plt.close()
 
     print(f"Read {n} rows from: {input_path}")
-    print(f"Pearson(alpha, agreement):  {pearson}")
-    print(f"Spearman(alpha, agreement): {spearman}")
-    print(f"Wrote: {hist_path}")
-    print(f"Wrote: {scatter_path}")
+    print(f"  Pearson(alpha, agreement):  {pearson}")
+    print(f"  Spearman(alpha, agreement): {spearman}")
+    print(f"  Wrote: {hist_path}")
+    print(f"  Wrote: {scatter_path}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Plot alpha/agreement logs (.jsonl) into PNG histogram and scatter plots."
+    )
+    parser.add_argument(
+        "--input",
+        required=True,
+        help="Path to a single alpha log JSONL, or a directory to search recursively for all .jsonl files.",
+    )
+    parser.add_argument(
+        "--out_dir",
+        default=None,
+        help="Output directory for PNGs. For single-file mode defaults to the file's directory; "
+             "for directory mode defaults to each file's own directory.",
+    )
+    parser.add_argument("--bins", type=int, default=20, help="Number of bins for alpha histogram.")
+    parser.add_argument(
+        "--max_points",
+        type=int,
+        default=20000,
+        help="Max points to plot in scatter (downsamples deterministically if larger).",
+    )
+    args = parser.parse_args()
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError(
+            "matplotlib is required to save PNG plots. Install it (e.g. pip install matplotlib) "
+            f"and re-run. Original import error: {e}"
+        ) from e
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input path not found: {input_path}")
+
+    if input_path.is_dir():
+        jsonl_files = sorted(input_path.rglob("*.jsonl"))
+        if not jsonl_files:
+            raise FileNotFoundError(f"No .jsonl files found under: {input_path}")
+        print(f"Found {len(jsonl_files)} .jsonl file(s) under {input_path}")
+        for f in jsonl_files:
+            out_dir = Path(args.out_dir) if args.out_dir else f.parent
+            out_dir.mkdir(parents=True, exist_ok=True)
+            _plot_one(f, out_dir, args.bins, args.max_points, plt)
+    else:
+        out_dir = Path(args.out_dir) if args.out_dir else input_path.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        _plot_one(input_path, out_dir, args.bins, args.max_points, plt)
 
 
 if __name__ == "__main__":
