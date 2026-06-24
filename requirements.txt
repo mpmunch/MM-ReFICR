@@ -13,3 +13,8 @@ transformers==4.45.2
 bitsandbytes
 matplotlib
 wandb
+evaluate
+rouge_score
+sacrebleu
+nltk
+
