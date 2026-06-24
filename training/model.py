@@ -22,6 +22,7 @@
 
 
 from dataclasses import dataclass
+import math
 import logging
 from typing import Dict, Optional
 
@@ -176,6 +177,20 @@ class ReFICRTrainModel(ReFICR):
             if (self.use_image_features and self.image_fusion_mode == "concat")
             else None
         )
+        # For dynamic mode, learn a per-sample gate alpha = sigmoid(W [text; image] + b).
+        self.image_gate = (
+            torch.nn.Linear(emb_dim * 2, 1)
+            if (self.use_image_features and self.image_fusion_mode == "dynamic")
+            else None
+        )
+        if self.image_gate is not None:
+            # Initialize bias such that sigmoid(b) ~= image_fusion_weight for stable warm-start.
+            alpha0 = float(self.image_fusion_weight)
+            if 0.0 < alpha0 < 1.0:
+                with torch.no_grad():
+                    # Use the inverse sigmoid (logit) to initialize the bias. 
+                    # This prevents a 0.5 cold-start and ensures the gate's initial output exactly matches alpha0.
+                    self.image_gate.bias.fill_(math.log(alpha0 / (1.0 - alpha0)))
 
     def _get_embedding_backbone(self):
         # Under PEFT/QLoRA wrappers, `.model` may resolve to a CausalLM wrapper
@@ -272,6 +287,7 @@ class ReFICRTrainModel(ReFICR):
                 image_fusion_weight=self.image_fusion_weight,
                 normalized=self.normalized,
                 image_concat_projection=self.image_concat_projection,
+                image_gate=self.image_gate,
             )
             
         loss_emb = self.emb_loss_fn(

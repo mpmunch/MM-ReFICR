@@ -39,6 +39,18 @@ TARGET_MODEL_PATH="${1:-}"
 DATASET="${2:-inspired}"
 FROM_STEP="${3:-conv2item}"
 
+# Auto alpha logging: enable when model name contains "_dynamic"
+MODEL_BASENAME="$(basename "$TARGET_MODEL_PATH")"
+AUTO_ALPHA=false
+EXTRA_ARGS=()
+if [[ "${MODEL_BASENAME}" == *"_dynamic"* ]]; then
+    AUTO_ALPHA=true
+    ALPHA_LOG="${LOG_DIR:-logs}/dynamic/analysis/dynamic_alpha_${DATASET}.jsonl"
+    mkdir -p "$(dirname "$ALPHA_LOG")"
+    EXTRA_ARGS+=(--image_fusion_mode dynamic --alpha_log_path "$ALPHA_LOG")
+    echo "Auto alpha logging enabled; alpha log: ${ALPHA_LOG}"
+fi
+
 if [[ "$DATASET" != "inspired" && "$DATASET" != "redial" ]]; then
     echo "Unknown dataset: $DATASET (expected: inspired or redial)"
     exit 1
@@ -95,7 +107,7 @@ run_step() {
     local config="$1"
     singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
         /bin/bash -c 'source /scratch/my_venv/bin/activate && exec "$@"' _ \
-        python inference_ReRICR.py --config "$config" --target_model_path "$TARGET_MODEL_PATH"
+        python inference_ReRICR.py --config "$config" --target_model_path "$TARGET_MODEL_PATH" "${EXTRA_ARGS[@]}"
 }
 
 # ---------------------------------------------------------------------------
@@ -293,6 +305,17 @@ TO_JSON="$TARGET_MODEL_PATH/test_processed_gen.jsonl"
 
 echo ""
 echo "Full log saved to: $LOG_FILE"
+
+# If auto alpha logging was enabled, try to plot the generated alpha JSONL
+if [[ "$AUTO_ALPHA" = true ]]; then
+    if [[ -f "${ALPHA_LOG}" ]]; then
+        echo "Plotting alpha log: ${ALPHA_LOG}"
+        singularity exec --nv "${SING_BINDS[@]}" "${SING_ENVS[@]}" "$CONTAINER" \
+            /bin/bash -lc "source /scratch/my_venv/bin/activate && python scripts/plot_alpha_log.py --input '${ALPHA_LOG}' --out_dir 'logs/dynamic/analysis'"
+    else
+        echo "Auto alpha logging requested but log not found: ${ALPHA_LOG}"
+    fi
+fi
 
   source .env
   # Log to wandb 

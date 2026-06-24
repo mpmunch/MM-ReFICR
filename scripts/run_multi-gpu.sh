@@ -11,11 +11,11 @@ export WANDB_PROJECT="MM_ReFICR Training"
 
 
 # ------------------------CHANGE PARAMS HERE!! ------------------------
-IMAGE_FUSION_MODE="${1:-linear}"   # Options: linear or concat
+IMAGE_FUSION_MODE="${1:-linear}"   # Options: linear, concat, or dynamic
 IMAGE_FUSION_WEIGHT="${2:-0.2}"
 
-if [[ "${IMAGE_FUSION_MODE}" != "linear" && "${IMAGE_FUSION_MODE}" != "concat" ]]; then
-  echo "Error: IMAGE_FUSION_MODE must be 'linear' or 'concat'. Got: ${IMAGE_FUSION_MODE}" >&2
+if [[ "${IMAGE_FUSION_MODE}" != "linear" && "${IMAGE_FUSION_MODE}" != "concat" && "${IMAGE_FUSION_MODE}" != "dynamic" ]]; then
+  echo "Error: IMAGE_FUSION_MODE must be 'linear', 'concat', or 'dynamic'. Got: ${IMAGE_FUSION_MODE}" >&2
   exit 1
 fi
 
@@ -23,12 +23,15 @@ EXTRA_FUSION_ARGS=()
 if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
   EXTRA_FUSION_ARGS+=(--image_fusion_weight "${IMAGE_FUSION_WEIGHT}")
   export WANDB_NAME="Train-IFW${IMAGE_FUSION_WEIGHT}"
+elif [[ "${IMAGE_FUSION_MODE}" == "dynamic" ]]; then
+  EXTRA_FUSION_ARGS+=(--image_fusion_weight "${IMAGE_FUSION_WEIGHT}")
+  export WANDB_NAME="Train-dynamic${IMAGE_FUSION_WEIGHT}"
 else
   export WANDB_NAME="Train-concat"
 fi
 
 OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}"
-if [[ "${IMAGE_FUSION_MODE}" == "linear" ]]; then
+if [[ "${IMAGE_FUSION_MODE}" == "linear" || "${IMAGE_FUSION_MODE}" == "dynamic" ]]; then
   OUTPUT_SUFFIX="${IMAGE_FUSION_MODE}_${IMAGE_FUSION_WEIGHT}"
 fi
 
